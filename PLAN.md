@@ -26,11 +26,16 @@ Obsidian Git plugin.
 | Monitoring | `monitor.ts` with exported pure parsers; `/api/health` (unauthenticated, 200/503); `/api/monitor`; `/monitor` page with auto-refresh | Phase 1 |
 | Unit tests | 46 tests across 4 suites (crypto, session, monitor parsers, db); all passing | Phase 1 |
 | CI | GitHub Actions — runs `vitest --coverage` on every PR; blocks merge if thresholds missed | Phase 1 |
+| Claude OAuth module | `claude/oauth.ts`: PKCE helpers, `needsRefresh`, `refreshAccessToken`, `storeTokens`/`loadTokens` (encrypted) | Phase 2 |
+| Token storage | Setup wizard + settings re-auth both use `storeTokens`; `claude_token_refreshed_at` now recorded | Phase 2 |
+| Settings page | `/settings` — token status (valid/expired, expiry time, last updated), re-auth token paste, vault path + Git URL copy | Phase 2 |
+| Settings API | `POST /api/settings/claude/token` — update token post-setup (auth-gated) | Phase 2 |
+| Unit tests | 88 tests across 6 suites (adds oauth.ts: PKCE, needsRefresh, refreshAccessToken, storeTokens, loadTokens); all passing | Phase 2 |
 
 ### Not yet built
-Phase 2 (Claude auth token refresh + settings page), Phase 3 (Docker container + session manager + WebSocket), Phase 4 (Chat UI), Phase 5 (Vault/Git), Phase 6 (OAuth polling), Phase 7 (prod hardening).
+Phase 3 (Docker container + session manager + WebSocket), Phase 4 (Chat UI), Phase 5 (Vault/Git), Phase 6 (OAuth polling), Phase 7 (prod hardening).
 
-### Next up → Phase 2
+### Next up → Phase 3
 
 ---
 
@@ -248,7 +253,7 @@ obsidian-claude-code/
         │   │   ├── webauthn.ts    ✓  registration + authentication ceremonies
         │   │   └── session.ts     ✓  HMAC-signed cookie, createSession/getSession
         │   ├── claude/
-        │   │   ├── oauth.ts       ← Phase 2  PKCE flow, token refresh
+        │   │   ├── oauth.ts       ✓  PKCE flow, token refresh, storeTokens/loadTokens
         │   │   └── session-manager.ts ← Phase 3  query() + canUseTool bridge
         │   ├── docker.ts          ← Phase 3  container lifecycle
         │   └── git.ts             ← Phase 5  bare repo management
@@ -271,12 +276,14 @@ obsidian-claude-code/
             ├── login/+page.svelte ✓  WebAuthn authenticate
             ├── setup/+page.svelte ✓  wizard: passkey → token → vault
             ├── monitor/           ✓  +page.svelte + +page.server.ts
-            ├── settings/          ← Phase 2  +page.svelte
+            ├── settings/          ✓  +page.svelte + +page.server.ts
             └── api/
                 ├── auth/register/ ✓  WebAuthn registration ceremony
                 ├── auth/login/    ✓  WebAuthn authentication ceremony
                 ├── health/        ✓  unauthenticated JSON health check
                 ├── monitor/       ✓  authenticated full snapshot
+                ├── settings/
+                │   └── claude/token/ ✓  update token post-setup (auth-gated)
                 ├── setup/
                 │   ├── claude/token/ ✓  save token, mark setup complete
                 │   ├── claude/start/ ← Phase 6  initiate PKCE OAuth
@@ -656,14 +663,14 @@ pure parsers and are tested via integration tests or with mocked IO.
 9. ✓ Vitest + `@vitest/coverage-v8`; 46 unit tests passing; 80/75/80 coverage thresholds
 10. ✓ GitHub Actions CI (`.github/workflows/ci.yml`): runs `test:coverage` on every PR, blocks merge on threshold miss
 
-### Phase 2 — Claude Auth  ← NEXT
-1. `claude/oauth.ts`: PKCE generation, OAuth URL construction
-2. Setup wizard Claude auth step (token-paste path first)
-3. Token storage (encrypted in config table)
-4. Token refresh logic (access token expires in 8h, refresh token long-lived)
-5. Settings page: show auth status, "re-authenticate" button
-6. **Unit tests**: PKCE helpers (pure), token expiry/refresh logic
-7. **Integration tests**: token exchange with mocked HTTP (`vi.mock` fetch)
+### Phase 2 — Claude Auth  ✓ complete
+1. ✓ `claude/oauth.ts`: PKCE generation, OAuth URL construction, `needsRefresh`
+2. ✓ Setup wizard Claude auth step (token-paste path) — uses `storeTokens`
+3. ✓ Token storage (encrypted in config table via `storeTokens`/`loadTokens`)
+4. ✓ Token refresh logic — `refreshAccessToken` (mocked-HTTP tested; endpoint confirmed in Phase 6)
+5. ✓ Settings page: token status, "re-authenticate" button, vault path + Git URL copy
+6. ✓ **Unit tests**: PKCE helpers, `needsRefresh`, `storeTokens`/`loadTokens`, `refreshAccessToken` (mocked fetch)
+7. ✓ `/api/settings/claude/token` POST — updates token from settings (auth-gated)
 
 ### Phase 3 — Container + Session Manager
 1. Workspace container Dockerfile
