@@ -1,0 +1,164 @@
+<script lang="ts">
+	import type { PageData } from './$types';
+	import type { MonitorSnapshot } from '$lib/server/monitor.js';
+
+	let { data }: { data: PageData } = $props();
+	// Use a derived so the initial value tracks server-side data reactively,
+	// then swap to live-refreshed data once available.
+	let liveSnap = $state<MonitorSnapshot | null>(null);
+	const snap = $derived<MonitorSnapshot>(liveSnap ?? data.snapshot);
+
+	// Auto-refresh every 30 s
+	$effect(() => {
+		const id = setInterval(async () => {
+			const res = await fetch('/api/monitor');
+			if (res.ok) liveSnap = await res.json();
+		}, 30_000);
+		return () => clearInterval(id);
+	});
+
+	function fmtUptime(s: number) {
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		return h > 0 ? `${h}h ${m}m` : `${m}m`;
+	}
+
+	function fmtExpiry(s?: number) {
+		if (s === undefined) return '—';
+		if (s <= 0) return 'Expired';
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		return h > 0 ? `${h}h ${m}m` : `${m}m`;
+	}
+
+	function statusColor(s: string) {
+		return s === 'running' || s === 'ok' ? 'text-emerald-400' : 'text-rose-400';
+	}
+</script>
+
+<svelte:head>
+	<title>Monitor — Claude Code</title>
+</svelte:head>
+
+{#snippet statCard(label: string, value: string, bar: number, sub?: string)}
+	<div class="rounded-xl bg-slate-900 px-3 py-3">
+		<p class="text-xs text-slate-500">{label}</p>
+		<p class="mt-0.5 text-lg font-bold text-slate-100">{value}</p>
+		{#if sub}
+			<p class="text-xs text-slate-600">{sub}</p>
+		{/if}
+		<div class="mt-2 h-1 w-full rounded-full bg-slate-800">
+			<div
+				class="h-1 rounded-full {bar > 85
+					? 'bg-rose-500'
+					: bar > 60
+						? 'bg-amber-500'
+						: 'bg-emerald-500'}"
+				style="width: {Math.min(bar, 100)}%"
+			></div>
+		</div>
+	</div>
+{/snippet}
+
+<div class="min-h-screen bg-slate-950 px-4 py-6" style="padding-bottom: env(safe-area-inset-bottom, 1.5rem)">
+	<h1 class="mb-6 text-lg font-semibold text-slate-100">System Monitor</h1>
+
+	<!-- Status banner -->
+	<div
+		class="mb-4 flex items-center gap-3 rounded-xl px-4 py-3
+               {snap.status === 'ok' ? 'bg-emerald-950 text-emerald-300' : 'bg-rose-950 text-rose-300'}"
+	>
+		<span class="text-xl">{snap.status === 'ok' ? '✓' : '⚠'}</span>
+		<div>
+			<p class="font-medium capitalize">{snap.status}</p>
+			<p class="text-sm opacity-70">Uptime {fmtUptime(snap.uptimeSeconds)}</p>
+		</div>
+	</div>
+
+	<!-- System resources -->
+	<section class="mb-4">
+		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">System</h2>
+		<div class="grid grid-cols-3 gap-2">
+			{@render statCard('CPU', `${snap.cpu}%`, snap.cpu)}
+			{@render statCard('RAM', `${snap.mem.usedPercent}%`, snap.mem.usedPercent, `${snap.mem.availableMb}MB free`)}
+			{@render statCard('Disk', `${snap.disk.usedPercent}%`, snap.disk.usedPercent, `${snap.disk.usedGb}/${snap.disk.totalGb}GB`)}
+		</div>
+	</section>
+
+	<!-- Container -->
+	<section class="mb-4">
+		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Container</h2>
+		<div class="rounded-xl bg-slate-900 px-4 py-3">
+			<div class="flex items-center justify-between">
+				<span class="text-slate-300">claude-workspace</span>
+				<span class="font-medium {statusColor(snap.container.status)} capitalize">
+					{snap.container.status}
+				</span>
+			</div>
+			{#if snap.container.uptimeSeconds !== undefined}
+				<p class="mt-1 text-sm text-slate-500">Up {fmtUptime(snap.container.uptimeSeconds)}</p>
+			{/if}
+		</div>
+	</section>
+
+	<!-- Claude token -->
+	<section class="mb-4">
+		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Claude Auth</h2>
+		<div class="rounded-xl bg-slate-900 px-4 py-3">
+			<div class="flex items-center justify-between">
+				<span class="text-slate-300">Token</span>
+				<span class="font-medium {snap.claudeTokenValid ? 'text-emerald-400' : 'text-rose-400'}">
+					{snap.claudeTokenValid ? 'Valid' : 'Expired'}
+				</span>
+			</div>
+			<p class="mt-1 text-sm text-slate-500">
+				Expires in {fmtExpiry(snap.claudeTokenExpiresInSeconds)}
+			</p>
+			{#if !snap.claudeTokenValid}
+				<a
+					href="/settings"
+					class="mt-2 inline-block rounded-lg bg-violet-700 px-3 py-1.5 text-sm font-medium text-white"
+				>
+					Re-authenticate →
+				</a>
+			{/if}
+		</div>
+	</section>
+
+	<!-- Vault -->
+	<section class="mb-4">
+		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Vault</h2>
+		<div class="rounded-xl bg-slate-900 px-4 py-3 text-sm text-slate-300">
+			{#if snap.vault.lastPushAt}
+				<p>Last push: {new Date(snap.vault.lastPushAt).toLocaleString()}</p>
+			{:else}
+				<p class="text-slate-500">No commits yet</p>
+			{/if}
+			{#if snap.vault.path}
+				<p class="mt-1 font-mono text-xs text-slate-500 break-all">{snap.vault.path}</p>
+			{/if}
+		</div>
+	</section>
+
+	<!-- Usage -->
+	<section class="mb-4">
+		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+			Usage (30 days)
+		</h2>
+		<div class="grid grid-cols-2 gap-2">
+			<div class="rounded-xl bg-slate-900 px-4 py-3">
+				<p class="text-2xl font-bold text-slate-100">{snap.usage.last30DaysSessions}</p>
+				<p class="text-sm text-slate-500">Sessions</p>
+			</div>
+			<div class="rounded-xl bg-slate-900 px-4 py-3">
+				<p class="text-2xl font-bold text-slate-100">
+					${snap.usage.last30DaysCostUsd.toFixed(2)}
+				</p>
+				<p class="text-sm text-slate-500">API cost</p>
+			</div>
+		</div>
+		<p class="mt-1 text-xs text-slate-600">
+			All time: {snap.usage.totalSessions} sessions · ${snap.usage.totalCostUsd.toFixed(2)}
+		</p>
+	</section>
+</div>
