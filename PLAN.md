@@ -31,11 +31,21 @@ Obsidian Git plugin.
 | Settings page | `/settings` — token status (valid/expired, expiry time, last updated), re-auth token paste, vault path + Git URL copy | Phase 2 |
 | Settings API | `POST /api/settings/claude/token` — update token post-setup (auth-gated) | Phase 2 |
 | Unit tests | 88 tests across 6 suites (adds oauth.ts: PKCE, needsRefresh, refreshAccessToken, storeTokens, loadTokens); all passing | Phase 2 |
+| Workspace container | `container/Dockerfile` (ubuntu:24.04 + Node LTS + Claude CLI + uv); `docker-exec-wrapper.sh` | Phase 3 |
+| Docker lifecycle | `docker.ts` — `getContainerState`, `ensureContainerRunning`, `stopContainer`; pure `parseInspectStatus` exported for tests | Phase 3 |
+| WS protocol | `lib/ws-protocol.ts` — `WsServerMsg` / `WsClientMsg` union types + `isClientMsg` guard | Phase 3 |
+| Session manager | `session-manager.ts` — `SessionManager` class: multi-client broadcast, async SDK loop, `canUseTool` permission round-trip, DB session rows, `encodeMsg`/`parseClientMsg` pure helpers | Phase 3 |
+| WS server | `ws-server.ts` — `attachWebSocketServer()`: HTTP upgrade, session-cookie auth, hands off to `ws-handler.ts` | Phase 3 |
+| WS handler | `ws-handler.ts` — routes `message` / `permission_response` / `interrupt` to session manager; auto-starts session on first message | Phase 3 |
+| Custom server | `src/server.ts` — production entry point (replaces adapter-node default); attaches WS to same HTTP server | Phase 3 |
+| Vite WS plugin | `wsDevPlugin` in `vite.config.ts` — attaches WS handler to Vite dev server on `listening` | Phase 3 |
+| Session REST API | `GET /api/session` (state), `DELETE /api/session` (interrupt) | Phase 3 |
+| Unit tests | 139 tests across 10 suites; coverage 93.3% stmts / 89.4% branches / 90.8% fns | Phase 3 |
 
 ### Not yet built
-Phase 3 (Docker container + session manager + WebSocket), Phase 4 (Chat UI), Phase 5 (Vault/Git), Phase 6 (OAuth polling), Phase 7 (prod hardening).
+Phase 4 (Chat UI), Phase 5 (Vault/Git), Phase 6 (OAuth polling), Phase 7 (prod hardening).
 
-### Next up → Phase 3
+### Next up → Phase 4
 
 ---
 
@@ -225,27 +235,31 @@ obsidian-claude-code/
 ├── docker-compose.yml             ← Phase 7
 ├── Caddyfile                      ← Phase 7
 │
-├── container/                     ← Phase 3
-│   ├── Dockerfile
-│   ├── entrypoint.sh
-│   └── docker-exec-wrapper.sh
+├── container/                     ✓  Phase 3
+│   ├── Dockerfile                 ✓  ubuntu:24.04, Node LTS, Claude CLI, uv
+│   └── docker-exec-wrapper.sh    ✓  pathToClaudeCodeExecutable bridge
 │
 └── app/
     ├── package.json               ✓
     ├── svelte.config.js           ✓  adapter-node
-    ├── vite.config.ts             ✓  Tailwind v4, vitest config
+    ├── vite.config.ts             ✓  Tailwind v4, vitest config, wsDevPlugin
     ├── drizzle.config.ts          ✓
     ├── drizzle/                   ✓  initial migration generated
     └── src/
         ├── app.html               ✓  PWA + iOS meta tags
         ├── app.css                ✓  Tailwind import
         ├── test-setup.ts          ✓  vitest global env vars
+        ├── server.ts              ✓  custom prod entry — HTTP + WS on same port
         ├── hooks.server.ts        ✓  setup + auth route guards
         ├── service-worker.ts      ← Phase 7
         │
         ├── lib/server/
         │   ├── crypto.ts          ✓  AES-256-GCM encrypt/decrypt
         │   ├── monitor.ts         ✓  health + monitor snapshots, pure parsers exported
+        │   ├── docker.ts          ✓  container lifecycle (getContainerState, ensureRunning, stop)
+        │   ├── session-manager.ts ✓  SessionManager: SDK loop, canUseTool bridge, WS broadcast
+        │   ├── ws-handler.ts      ✓  per-connection handler (routes msgs to SessionManager)
+        │   ├── ws-server.ts       ✓  attachWebSocketServer() — auth + upgrade
         │   ├── db/
         │   │   ├── schema.ts      ✓  config + sessions tables
         │   │   └── index.ts       ✓  drizzle instance, getConfig/setConfig/deleteConfig
@@ -254,8 +268,6 @@ obsidian-claude-code/
         │   │   └── session.ts     ✓  HMAC-signed cookie, createSession/getSession
         │   ├── claude/
         │   │   ├── oauth.ts       ✓  PKCE flow, token refresh, storeTokens/loadTokens
-        │   │   └── session-manager.ts ← Phase 3  query() + canUseTool bridge
-        │   ├── docker.ts          ← Phase 3  container lifecycle
         │   └── git.ts             ← Phase 5  bare repo management
         │
         ├── lib/components/        ← Phase 4
@@ -268,7 +280,7 @@ obsidian-claude-code/
         │   │   └── CommandBar.svelte
         │   └── ui/
         │
-        ├── lib/ws-protocol.ts     ← Phase 3  WebSocket message types
+        ├── lib/ws-protocol.ts     ✓  WsServerMsg / WsClientMsg types + isClientMsg guard
         │
         └── routes/
             ├── +layout.svelte     ✓  bottom nav (Chat / Monitor / Settings)
@@ -289,8 +301,8 @@ obsidian-claude-code/
                 │   ├── claude/start/ ← Phase 6  initiate PKCE OAuth
                 │   ├── claude/poll/  ← Phase 6  poll for auth code
                 │   └── vault/     ✓  init git repo, return push URL
-                ├── session/       ← Phase 3
-                └── ws/            ← Phase 3  WebSocket upgrade
+                ├── session/       ✓  GET (state) + DELETE (interrupt)
+                └── ws/            ✓  WebSocket upgrade (via ws-server.ts + vite plugin)
 ```
 
 ---
@@ -672,14 +684,17 @@ pure parsers and are tested via integration tests or with mocked IO.
 6. ✓ **Unit tests**: PKCE helpers, `needsRefresh`, `storeTokens`/`loadTokens`, `refreshAccessToken` (mocked fetch)
 7. ✓ `/api/settings/claude/token` POST — updates token from settings (auth-gated)
 
-### Phase 3 — Container + Session Manager
-1. Workspace container Dockerfile
-2. `docker-exec-wrapper.sh`
-3. `docker.ts`: start/stop/exec container lifecycle
-4. `session-manager.ts`: `query()` integration, `canUseTool` WebSocket bridge
-5. WebSocket server (`/api/ws`): auth check, message routing
-6. **Unit tests**: WebSocket message routing, permission round-trip state machine
-7. **Integration tests**: Docker lifecycle (skipped if Docker unavailable)
+### Phase 3 — Container + Session Manager  ✓ complete
+1. ✓ `container/Dockerfile` — ubuntu:24.04, Node LTS, Claude CLI, uv, non-root `claude` user
+2. ✓ `container/docker-exec-wrapper.sh` — `pathToClaudeCodeExecutable` bridge to `docker exec -i`
+3. ✓ `docker.ts` — `getContainerState`, `ensureContainerRunning`, `stopContainer`; `parseInspectStatus` exported for unit tests
+4. ✓ `session-manager.ts` — `SessionManager` class: multi-client broadcast, async SDK loop with streaming user input queue, `canUseTool` permission round-trip (5-min timeout), DB session rows; `encodeMsg`/`parseClientMsg` pure helpers
+5. ✓ `ws-handler.ts` — per-connection message routing; auto-starts session on first user message
+6. ✓ `ws-server.ts` — `attachWebSocketServer()`: session-cookie auth on upgrade, routes to `ws-handler`
+7. ✓ `src/server.ts` — custom production server entry; attaches WS to same HTTP port as SvelteKit
+8. ✓ `wsDevPlugin` in `vite.config.ts` — attaches WS to Vite dev server on `listening`
+9. ✓ `GET /api/session` + `DELETE /api/session` — state query + interrupt
+10. ✓ **Unit tests**: 139 tests total, 10 suites; coverage 93.3% stmts / 89.4% branches / 90.8% fns
 
 ### Phase 4 — Chat UI
 1. Message list with streaming text

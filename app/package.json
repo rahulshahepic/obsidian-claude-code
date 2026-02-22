@@ -34,8 +34,10 @@
 		"@simplewebauthn/browser": "^13.2.2",
 		"@simplewebauthn/server": "^13.2.3",
 		"@tailwindcss/vite": "^4.2.0",
+		"@types/ws": "^8.18.1",
 		"better-sqlite3": "^12.6.2",
 		"drizzle-orm": "^0.45.1",
-		"tailwindcss": "^4.2.0"
+		"tailwindcss": "^4.2.0",
+		"ws": "^8.19.0"
 	}
 }
