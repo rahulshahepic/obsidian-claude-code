@@ -39,6 +39,7 @@ WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/package.json .
+COPY --from=builder /app/drizzle ./drizzle
 
 # Wrapper script: app calls this to exec into the workspace container
 COPY container/docker-exec-wrapper.sh /usr/local/bin/docker-exec-wrapper.sh
