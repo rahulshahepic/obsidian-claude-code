@@ -46,11 +46,22 @@ Obsidian Git plugin.
 | WS client | WebSocket connection with auto-reconnect; streams `text`/`tool_start`/`tool_end`/`permission_request`/`session_state`/`cost`/`error` | Phase 4 |
 | E2E tests | Playwright installed; `e2e/chat.test.ts` — server responds, login page has "Sign in with Google" link; full chat tests scaffolded (skipped; require live server) | Phase 4 → updated |
 | Deploy secrets | `scripts/deploy.sh` + CI inject `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAIL` from GitHub Secrets into server `.env` on every deploy | post-Phase 4 |
+| Git module | `git.ts` — `initVaultRepo`, `buildSshGitUrl`, `getSshGitUrl`, `parsePublicKey`, `getAuthorizedKeysPath`, `writeAuthorizedKey`, `readAuthorizedKey`; pure helpers exported for testing | Phase 5 → updated (SSH) |
+| SSH vault sync | Obsidian Git connects via SSH; vault remote URL is `ssh://user@host/vault/path`; public key pasted in Settings is written to `~/.ssh/authorized_keys` inside a managed marker block | Phase 5 → updated (SSH) |
+| SSH key UI | Settings page: SSH key section — shows current key (truncated), collapsible paste form, validation; `POST /api/settings/ssh/key` stores in DB + writes `authorized_keys` | Phase 5 → updated (SSH) |
+| Vault setup | `/api/setup/vault` calls `initVaultRepo` + `getSshGitUrl`; URL format `ssh://user@host/path` | Phase 5 → updated (SSH) |
+| Unit tests | 167 tests across 11 suites (adds git.ts: buildSshGitUrl, parsePublicKey, getAuthorizedKeysPath, isVaultRepo, initVaultRepo, writeAuthorizedKey, readAuthorizedKey) | Phase 5 → updated (SSH) |
+| Browser OAuth | `GET /api/setup/claude/start` — generates PKCE params + auth URL; `POST /api/setup/claude/exchange` — takes auth code, exchanges for tokens, issues session cookie | Phase 6 |
+| Setup wizard | Two-path Claude auth: "Sign in with Claude" (browser OAuth, user pastes code from Anthropic callback page) or "Paste token" (legacy `claude setup-token`) | Phase 6 |
+| `exchangeCode` | `claude/oauth.ts` — authorization_code grant; pure, tested with mocked fetch | Phase 6 |
+| Unit tests | 171 tests across 11 suites (+4 for exchangeCode) | Phase 6 |
+| Service worker | `src/service-worker.ts` — PWA offline support: cache-first for app shell, network-only for API routes, offline fallback on navigation | Phase 7 |
+| Network isolation | `docker-compose.yml` — explicit `public` + `internal` networks; workspace container on `internal` only (no direct inbound from internet) | Phase 7 |
 
 ### Not yet built
-Phase 5 (Vault/Git), Phase 6 (OAuth polling), Phase 7 (prod hardening).
+Nothing — Phases 6 and 7 are complete.
 
-### Next up → Phase 5
+### Next up → ship it
 
 ---
 
@@ -275,7 +286,7 @@ obsidian-claude-code/
         │   │   └── session.ts     ✓  HMAC-signed cookie, createSession/getSession
         │   ├── claude/
         │   │   ├── oauth.ts       ✓  PKCE flow, token refresh, storeTokens/loadTokens
-        │   └── git.ts             ← Phase 5  bare repo management
+        │   └── git.ts             ✓  Phase 5  initVaultRepo, buildGitUrl, parseBasicAuth, parseGitBackendResponse
         │
         ├── lib/components/        ✓  Phase 4
         │   ├── chat/
@@ -308,7 +319,9 @@ obsidian-claude-code/
                 │   ├── claude/poll/  ← Phase 6  poll for auth code
                 │   └── vault/     ✓  init git repo, return push URL
                 ├── session/       ✓  GET (state) + DELETE (interrupt)
-                └── ws/            ✓  WebSocket upgrade (via ws-server.ts + vite plugin)
+                ├── ws/            ✓  WebSocket upgrade (via ws-server.ts + vite plugin)
+                └── vault.git/
+                    └── [...path]/ ✓  Phase 5  git smart HTTP backend (GET info/refs, POST pack)
 ```
 
 ---
@@ -722,25 +735,30 @@ pure parsers and are tested via integration tests or with mocked IO.
 7. ✓ WS client — auto-reconnect, streams all message types, optimistic user messages
 8. ✓ **E2E tests (Playwright)**: `@playwright/test` installed; `e2e/` with setup, login, chat tests
 
-### Phase 5 — Vault / Git
-1. Git bare repo at `/var/vault`
-2. Git HTTP backend via Caddy (or SSH — TBD based on Obsidian Git plugin support)
-3. Container vault mount at session start
-4. Settings page: show the push URL, copy button
-5. **Integration tests**: bare repo init, push URL generation, git HTTP auth
+### Phase 5 — Vault / Git  ✓ complete
+1. ✓ `git.ts` — `initVaultRepo` (git init + `receive.denyCurrentBranch=updateInstead`, idempotent); `buildSshGitUrl`/`getSshGitUrl`; `parsePublicKey`; `writeAuthorizedKey`/`readAuthorizedKey` (managed marker block, non-destructive)
+2. ✓ **SSH vault sync** — Obsidian Git connects via SSH; vault remote `ssh://user@host/path`; user pastes the Obsidian Git public key in Settings → written to `authorized_keys`
+3. ✓ Container vault mount — already handled at container start via `-v ${VAULTS_DIR}:/vault`; `receive.denyCurrentBranch=updateInstead` means SSH pushes update the working tree Claude reads
+4. ✓ Settings page SSH URL + copy button + SSH key management (paste, validate, save)
+5. ✓ **Unit tests**: `buildSshGitUrl`, `parsePublicKey`, `getAuthorizedKeysPath`, `isVaultRepo`, `initVaultRepo`, `writeAuthorizedKey`, `readAuthorizedKey` — 28 new tests, 167 total, all passing
 
-### Phase 6 — OAuth Polling (Phase 2 upgrade)
-1. Reverse-engineer CLI polling mechanism (network inspection of `claude auth` run)
-2. Implement `setup/claude/start` + `setup/claude/poll` server routes
-3. Add fully browser-based auth path to setup wizard (no terminal step)
-4. **Unit tests**: polling state machine, PKCE challenge/verifier generation
+### Phase 6 — Browser OAuth  ✓ complete
+1. ✓ `exchangeCode` in `claude/oauth.ts` — authorization_code PKCE grant, mocked-fetch tested
+2. ✓ `GET /api/setup/claude/start` — generates verifier+challenge+state, stores in DB, returns auth URL
+3. ✓ `POST /api/setup/claude/exchange` — takes code from Anthropic callback page, exchanges for tokens,
+   stores, marks setup complete, issues session cookie
+4. ✓ Setup wizard: "Sign in with Claude" tab (browser flow) + "Paste token" tab (legacy fallback)
+5. ✓ **Unit tests**: 4 new exchangeCode tests (200, request body, default expiry, non-OK); 171 total
 
-### Phase 7 — Production Hardening
-1. `docker-compose.yml` prod target
-2. Caddy config with HTTPS
-3. Container resource limits (memory, CPU, PIDs)
-4. Network isolation (`claude-net` bridge, no host access)
-5. Log rotation, startup script / systemd unit
+### Phase 7 — Production Hardening  ✓ complete
+1. ✓ `docker-compose.yml` — caddy + app + workspace services, named volumes
+2. ✓ `Dockerfile` — multi-stage build; Node 22 slim + Docker CLI for docker-exec
+3. ✓ Caddy config — HTTPS reverse proxy, auto-cert via ACME
+4. ✓ Container resource limits — `mem_limit: 1g`, `cpus: 1.0`, `pids_limit: 200`
+5. ✓ Network isolation — `public` network (caddy+app) + `internal` network (app+workspace)
+6. ✓ `scripts/setup.sh` — interactive first-time setup; generates `.env` with random secrets
+7. ✓ `scripts/deploy.sh` — `git pull` → inject GitHub Secrets into `.env` → `docker compose up -d --build`
+8. ✓ `src/service-worker.ts` — PWA offline: cache-first app shell, network-only API, offline nav fallback
    ~~CI pipeline~~ — done in Phase 1
 
 ---

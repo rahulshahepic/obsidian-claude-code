@@ -26,6 +26,7 @@ import {
 	generateCodeChallenge,
 	buildAuthorizationUrl,
 	needsRefresh,
+	exchangeCode,
 	refreshAccessToken,
 	storeTokens,
 	loadTokens
@@ -237,6 +238,78 @@ describe('refreshAccessToken', () => {
 		const body = new URLSearchParams(init.body as string);
 		expect(body.get('grant_type')).toBe('refresh_token');
 		expect(body.get('refresh_token')).toBe('my-token');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// exchangeCode — mocked fetch
+// ---------------------------------------------------------------------------
+
+describe('exchangeCode', () => {
+	afterEach(() => vi.restoreAllMocks());
+
+	it('returns tokens on a 200 response', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => ({
+					access_token: 'access-tok',
+					refresh_token: 'refresh-tok',
+					expires_in: 3600
+				})
+			})
+		);
+
+		const tokens = await exchangeCode('auth-code-123', 'verifier-abc');
+		expect(tokens.accessToken).toBe('access-tok');
+		expect(tokens.refreshToken).toBe('refresh-tok');
+		expect(new Date(tokens.expiresAt).getTime()).toBeGreaterThan(Date.now() + 3000 * 1000);
+	});
+
+	it('sends grant_type=authorization_code with code and verifier', async () => {
+		const mockFetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({ access_token: 'tok', expires_in: 3600 })
+		});
+		vi.stubGlobal('fetch', mockFetch);
+
+		await exchangeCode('the-code', 'the-verifier');
+		const [, init] = mockFetch.mock.calls[0];
+		const body = new URLSearchParams(init.body as string);
+		expect(body.get('grant_type')).toBe('authorization_code');
+		expect(body.get('code')).toBe('the-code');
+		expect(body.get('code_verifier')).toBe('the-verifier');
+		expect(body.get('redirect_uri')).toBe('https://console.anthropic.com/oauth/code/callback');
+	});
+
+	it('defaults to 8-hour expiry when expires_in is omitted', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => ({ access_token: 'tok' })
+			})
+		);
+
+		const before = Date.now();
+		const tokens = await exchangeCode('c', 'v');
+		expect(new Date(tokens.expiresAt).getTime()).toBeGreaterThanOrEqual(
+			before + 8 * 3600 * 1000
+		);
+	});
+
+	it('throws on a non-OK response', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: false,
+				status: 400,
+				text: async () => 'invalid_grant'
+			})
+		);
+
+		await expect(exchangeCode('bad-code', 'v')).rejects.toThrow('400');
 	});
 });
 

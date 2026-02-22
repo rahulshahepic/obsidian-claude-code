@@ -24,7 +24,6 @@
 			saveSuccess = true;
 			newToken = '';
 			showReauth = false;
-			// Reload to get fresh token status from server
 			location.reload();
 		} catch (e) {
 			saveError = e instanceof Error ? e.message : 'Failed to update token';
@@ -40,6 +39,41 @@
 		await navigator.clipboard.writeText(data.vaultGitUrl);
 		copied = true;
 		setTimeout(() => (copied = false), 2000);
+	}
+
+	// SSH key section
+	let showSshKeyForm = $state(false);
+	let newSshKey = $state('');
+	let sshSaving = $state(false);
+	let sshError = $state('');
+
+	async function saveSshKey() {
+		sshSaving = true;
+		sshError = '';
+		try {
+			const res = await fetch('/api/settings/ssh/key', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ pubKey: newSshKey.trim() })
+			});
+			if (!res.ok) throw new Error(await res.text());
+			newSshKey = '';
+			showSshKeyForm = false;
+			location.reload();
+		} catch (e) {
+			sshError = e instanceof Error ? e.message : 'Failed to save SSH key';
+		} finally {
+			sshSaving = false;
+		}
+	}
+
+	/** Show type + first 20 chars of key data + optional comment */
+	function truncateKey(key: string): string {
+		const parts = key.split(/\s+/);
+		if (parts.length < 2) return key.slice(0, 30) + '…';
+		const [type, data, ...rest] = parts;
+		const comment = rest.join(' ');
+		return `${type} ${data.slice(0, 20)}…${comment ? ' ' + comment : ''}`;
 	}
 
 	function fmtExpiry(s?: number) {
@@ -138,8 +172,9 @@
 			<div class="rounded-xl bg-slate-900 px-4 py-4">
 				<p class="mb-1 text-sm text-slate-400">Server path</p>
 				<p class="break-all font-mono text-sm text-slate-300">{data.vaultPath}</p>
+
 				{#if data.vaultGitUrl}
-					<p class="mb-1 mt-3 text-sm text-slate-400">Obsidian Git remote</p>
+					<p class="mb-1 mt-3 text-sm text-slate-400">Obsidian Git remote (SSH)</p>
 					<div class="flex items-center gap-2">
 						<code
 							class="min-w-0 flex-1 break-all rounded-lg bg-slate-950 px-3 py-2 font-mono text-sm text-violet-300"
@@ -155,6 +190,63 @@
 						</button>
 					</div>
 				{/if}
+
+				<!-- SSH key management -->
+				<div class="mt-4 border-t border-slate-800 pt-4">
+					<div class="flex items-start justify-between">
+						<div class="min-w-0 flex-1">
+							<p class="text-sm text-slate-400">SSH public key</p>
+							{#if data.vaultSshPubkey}
+								<p class="mt-1 break-all font-mono text-xs text-slate-500">
+									{truncateKey(data.vaultSshPubkey)}
+								</p>
+							{:else}
+								<p class="mt-1 text-xs text-amber-500">
+									No key — Obsidian Git cannot push yet
+								</p>
+							{/if}
+						</div>
+						<button
+							onclick={() => (showSshKeyForm = !showSshKeyForm)}
+							class="ml-3 shrink-0 text-sm text-violet-400 active:text-violet-200"
+						>
+							{showSshKeyForm ? 'Cancel' : data.vaultSshPubkey ? 'Replace →' : 'Add key →'}
+						</button>
+					</div>
+
+					{#if showSshKeyForm}
+						<div class="mt-3">
+							<p class="mb-1 text-sm text-slate-400">
+								In Obsidian Git on your phone, generate an SSH key pair and copy the
+								<strong class="text-slate-300">public key</strong>.
+							</p>
+							<p class="mb-2 text-xs text-slate-500">
+								Obsidian Git → Settings → Authentication → SSH → Copy public key
+							</p>
+							<textarea
+								bind:value={newSshKey}
+								placeholder="ssh-ed25519 AAAA… or ssh-rsa AAAA…"
+								rows={4}
+								class="w-full resize-none rounded-xl border border-slate-800 bg-slate-950 px-3 py-2
+                                       font-mono text-xs text-slate-200 placeholder:text-slate-600
+                                       focus:border-violet-500 focus:outline-none"
+							></textarea>
+							<button
+								onclick={saveSshKey}
+								disabled={sshSaving || !newSshKey.trim()}
+								class="mt-2 w-full rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white
+                                       transition active:scale-95 disabled:opacity-50"
+							>
+								{sshSaving ? 'Saving…' : 'Save SSH key'}
+							</button>
+							{#if sshError}
+								<p class="mt-2 rounded-lg bg-rose-950 px-3 py-2 text-sm text-rose-300">
+									{sshError}
+								</p>
+							{/if}
+						</div>
+					{/if}
+				</div>
 			</div>
 		</section>
 	{/if}

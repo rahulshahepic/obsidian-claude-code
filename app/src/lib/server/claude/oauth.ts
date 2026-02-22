@@ -104,6 +104,40 @@ const TOKEN_ENDPOINT = 'https://console.anthropic.com/v1/oauth/token';
 const CLIENT_ID = '9d1c250a-d963-4f45-acb0-9e66a5a1be0e';
 
 /**
+ * Exchange an authorization code (from the OAuth callback page) for tokens.
+ * Used by the browser-based setup flow.
+ * Throws on non-2xx responses.
+ */
+export async function exchangeCode(code: string, codeVerifier: string): Promise<OAuthTokens> {
+	const res = await fetch(TOKEN_ENDPOINT, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams({
+			grant_type: 'authorization_code',
+			code,
+			code_verifier: codeVerifier,
+			client_id: CLIENT_ID,
+			redirect_uri: 'https://console.anthropic.com/oauth/code/callback'
+		})
+	});
+
+	if (!res.ok) {
+		const text = await res.text();
+		throw new Error(`Token exchange failed: ${res.status} ${text}`);
+	}
+
+	const data = (await res.json()) as TokenResponse;
+	const expiresIn = data.expires_in ?? 8 * 3600;
+	const now = new Date();
+	return {
+		accessToken: data.access_token,
+		refreshToken: data.refresh_token,
+		expiresAt: new Date(now.getTime() + expiresIn * 1000).toISOString(),
+		refreshedAt: now.toISOString()
+	};
+}
+
+/**
  * Exchange a refresh token for new access + refresh tokens.
  * Throws on non-2xx responses.
  */

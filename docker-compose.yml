@@ -13,6 +13,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     env_file: .env
+    networks:
+      - public
     depends_on:
       - app
 
@@ -32,10 +34,15 @@ services:
       VAULTS_DIR: /var/vault
       NODE_ENV: production
       PORT: "3000"
+    networks:
+      - public    # caddy → app traffic
+      - internal  # app → workspace (docker exec via socket)
     depends_on:
       - workspace
 
   # ── Claude Code CLI workspace container ──────────────────────────────────────
+  # On the internal network only — no direct inbound access from the internet.
+  # The Claude CLI still reaches the Anthropic API via the host's NAT.
   workspace:
     build:
       context: container
@@ -48,7 +55,13 @@ services:
     mem_limit: 1g
     cpus: 1.0
     pids_limit: 200
+    networks:
+      - internal
     command: tail -f /dev/null         # keep alive; claude is exec'd in on demand
+
+networks:
+  public:    # caddy + app — internet-facing
+  internal:  # app + workspace — isolated from public internet inbound
 
 volumes:
   caddy_data:    # Caddy TLS certificates (persists across redeploys)
