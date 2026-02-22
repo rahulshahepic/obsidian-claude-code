@@ -2,17 +2,25 @@
 	import { startRegistration } from '@simplewebauthn/browser';
 	import { goto } from '$app/navigation';
 
-	type Step = 'passkey' | 'claude' | 'vault' | 'done';
-	let step = $state<Step>('passkey');
+	let { data } = $props();
+
+	type Step = 'token' | 'passkey' | 'claude' | 'vault' | 'done';
+	let step = $state<Step>(data.requiresSetupToken ? 'token' : 'passkey');
 	let busy = $state(false);
 	let error = $state('');
+
+	// Setup token step
+	let setupToken = $state('');
 
 	// Passkey step
 	async function registerPasskey() {
 		busy = true;
 		error = '';
 		try {
-			const optRes = await fetch('/api/auth/register');
+			const headers: Record<string, string> = {};
+			if (setupToken) headers['x-setup-token'] = setupToken;
+
+			const optRes = await fetch('/api/auth/register', { headers });
 			if (!optRes.ok) throw new Error(await optRes.text());
 			const options = await optRes.json();
 
@@ -20,7 +28,7 @@
 
 			const verRes = await fetch('/api/auth/register', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...headers },
 				body: JSON.stringify(credential)
 			});
 			if (!verRes.ok) throw new Error(await verRes.text());
@@ -76,9 +84,9 @@
 		}
 	}
 
-	const steps: Step[] = ['passkey', 'claude', 'vault', 'done'];
-	function stepIndex(s: Step) {
-		return steps.indexOf(s);
+	const progressSteps: Step[] = ['passkey', 'claude', 'vault'];
+	function progressIndex(s: Step) {
+		return progressSteps.indexOf(s);
 	}
 </script>
 
@@ -87,23 +95,52 @@
 </svelte:head>
 
 <div class="min-h-screen bg-slate-950 px-6 py-12 flex flex-col">
-	<!-- Progress dots -->
-	<div class="mb-10 flex justify-center gap-2">
-		{#each ['passkey', 'claude', 'vault'] as s}
-			<div
-				class="h-2 w-2 rounded-full transition-colors
-                       {stepIndex(step) > stepIndex(s as Step)
-					? 'bg-violet-400'
-					: step === s
-						? 'bg-violet-600'
-						: 'bg-slate-700'}"
-			></div>
-		{/each}
-	</div>
+	<!-- Progress dots (only shown once past the token gate) -->
+	{#if step !== 'token'}
+		<div class="mb-10 flex justify-center gap-2">
+			{#each progressSteps as s}
+				<div
+					class="h-2 w-2 rounded-full transition-colors
+                           {progressIndex(step) > progressIndex(s)
+						? 'bg-violet-400'
+						: step === s
+							? 'bg-violet-600'
+							: 'bg-slate-700'}"
+				></div>
+			{/each}
+		</div>
+	{/if}
 
 	<div class="w-full max-w-sm mx-auto flex-1">
+		<!-- Step 0: Setup token gate -->
+		{#if step === 'token'}
+			<div class="mb-8 text-center">
+				<div class="mb-4 text-5xl">🔐</div>
+				<h1 class="text-2xl font-bold text-slate-100">Enter setup token</h1>
+				<p class="mt-2 text-sm text-slate-400">
+					Enter the setup token that was printed when you ran
+					<code class="text-violet-300">scripts/setup.sh</code> on your server.
+				</p>
+			</div>
+			<input
+				bind:value={setupToken}
+				type="text"
+				placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+				class="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-mono text-slate-200
+                       placeholder:text-slate-600 border border-slate-800 focus:border-violet-500
+                       focus:outline-none"
+			/>
+			<button
+				onclick={() => { if (setupToken.trim()) step = 'passkey'; }}
+				disabled={!setupToken.trim()}
+				class="mt-3 w-full rounded-2xl bg-violet-600 px-6 py-4 text-base font-semibold text-white
+                       transition active:scale-95 disabled:opacity-50"
+			>
+				Continue
+			</button>
+
 		<!-- Step 1: Passkey -->
-		{#if step === 'passkey'}
+		{:else if step === 'passkey'}
 			<div class="mb-8 text-center">
 				<div class="mb-4 text-5xl">🔑</div>
 				<h1 class="text-2xl font-bold text-slate-100">Create your passkey</h1>
