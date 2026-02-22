@@ -20,7 +20,7 @@ export const handleError: HandleServerError = ({ error }) => {
 const PUBLIC_PATHS = ['/login', '/api/health', '/api/auth/google', '/api/auth/callback'];
 
 // Authentication required, but setup_complete is not (these complete the setup)
-const SETUP_PATHS = ['/setup', '/api/setup'];
+const SETUP_PATHS = ['/setup', '/api/setup', '/api/auth/signout'];
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;
