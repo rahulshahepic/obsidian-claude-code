@@ -3,127 +3,86 @@
  *
  * The vault is a regular (non-bare) git repository on the VPS host.
  * It is configured with `receive.denyCurrentBranch = updateInstead` so that
- * Obsidian Git can push directly to it via HTTP without needing a separate
+ * Obsidian Git can push directly to it via SSH without needing a separate
  * bare repo. The working tree is bind-mounted into the workspace container so
  * Claude Code can read and edit vault files directly.
  *
- * Pure helpers (buildGitUrl, parseBasicAuth, parseGitBackendResponse) are
- * exported for unit testing.  IO-bound functions (initVaultRepo, isVaultRepo)
- * use execSync / existsSync so they can be mocked in tests.
+ * Pure helpers (buildSshGitUrl, parsePublicKey, getAuthorizedKeysPath) are
+ * exported for unit testing.  IO-bound functions use execSync / fs so they
+ * can be mocked in tests.
  */
 import { execSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { homedir } from 'os';
+import path from 'path';
 
 // ---------------------------------------------------------------------------
-// Types
+// authorized_keys marker — identifies the block managed by this app
 // ---------------------------------------------------------------------------
 
-export interface GitBackendResponse {
-	status: number;
-	headers: Record<string, string>;
-	body: Buffer;
-}
+const MARKER_BEGIN = '# === BEGIN obsidian-claude-code ===';
+const MARKER_END = '# === END obsidian-claude-code ===';
 
 // ---------------------------------------------------------------------------
 // Pure helpers (exported for unit testing)
 // ---------------------------------------------------------------------------
 
 /**
- * Build the git remote URL for the vault.
- * The app always serves the vault at `/vault.git` regardless of the
- * on-disk directory name, so this URL is deterministic.
+ * Build the SSH git remote URL for the vault.
+ *
+ * @param user      SSH username on the server (typically the OS user that owns the vault)
+ * @param host      VPS hostname or IP
+ * @param port      SSH port — 22 is omitted from the URL
+ * @param vaultPath absolute path to the vault on the server
  */
-export function buildGitUrl(publicUrl: string): string {
-	return `${publicUrl.replace(/\/$/, '')}/vault.git`;
+export function buildSshGitUrl(
+	user: string,
+	host: string,
+	port: number,
+	vaultPath: string
+): string {
+	const portPart = port !== 22 ? `:${port}` : '';
+	return `ssh://${user}@${host}${portPart}${vaultPath}`;
 }
 
 /**
- * Parse an HTTP Basic Authorization header.
- * Returns null if the header is missing, uses a non-Basic scheme, or has
- * no colon separator in the decoded credentials.
+ * Build the SSH git URL using environment config.
+ * Reads SSH_GIT_USER (default: USER env / 'git') and SSH_PORT (default: 22).
  */
-export function parseBasicAuth(
-	header: string | null | undefined
-): { username: string; password: string } | null {
-	if (!header) return null;
-	const match = header.match(/^Basic\s+(.+)$/i);
-	if (!match) return null;
-	try {
-		const decoded = Buffer.from(match[1], 'base64').toString('utf8');
-		const colonIdx = decoded.indexOf(':');
-		if (colonIdx < 0) return null;
-		return {
-			username: decoded.slice(0, colonIdx),
-			// Everything after the first colon is the password (colons are allowed)
-			password: decoded.slice(colonIdx + 1)
-		};
-	} catch {
-		return null;
-	}
+export function getSshGitUrl(host: string, vaultPath: string): string {
+	const user = process.env.SSH_GIT_USER ?? process.env.USER ?? 'git';
+	const port = parseInt(process.env.SSH_PORT ?? '22', 10);
+	return buildSshGitUrl(user, host, port, vaultPath);
 }
 
 /**
- * Parse the raw stdout from `git http-backend` (CGI response format).
- *
- * The CGI output format is:
- *   Header: value\r\n
- *   Header: value\r\n
- *   \r\n
- *   <binary body>
- *
- * Returns a structured response with extracted headers, status code, and body.
- * If the blank-line separator cannot be found, returns status 500.
+ * Return the path to the authorized_keys file managed by this app.
+ * Reads AUTHORIZED_KEYS_FILE env var; defaults to ~/.ssh/authorized_keys.
  */
-export function parseGitBackendResponse(output: Buffer): GitBackendResponse {
-	// Find the blank line separating headers from body (\r\n\r\n or \n\n)
-	let bodyStart = -1;
-	let headerEnd = -1;
+export function getAuthorizedKeysPath(): string {
+	return process.env.AUTHORIZED_KEYS_FILE ?? path.join(homedir(), '.ssh', 'authorized_keys');
+}
 
-	for (let i = 0; i < output.length - 1; i++) {
-		if (
-			i + 3 < output.length &&
-			output[i] === 13 &&
-			output[i + 1] === 10 &&
-			output[i + 2] === 13 &&
-			output[i + 3] === 10
-		) {
-			// \r\n\r\n
-			headerEnd = i;
-			bodyStart = i + 4;
-			break;
-		}
-		if (output[i] === 10 && output[i + 1] === 10) {
-			// \n\n
-			headerEnd = i;
-			bodyStart = i + 2;
-			break;
-		}
-	}
-
-	if (bodyStart < 0) {
-		return { status: 500, headers: {}, body: output };
-	}
-
-	const headerText = output.slice(0, headerEnd).toString('utf8');
-	const body = output.slice(bodyStart);
-	const headers: Record<string, string> = {};
-	let status = 200;
-
-	for (const line of headerText.split('\n')) {
-		const trimmed = line.trim();
-		if (!trimmed) continue;
-		if (trimmed.startsWith('Status:')) {
-			const code = parseInt(trimmed.slice(7).trim(), 10);
-			if (!isNaN(code)) status = code;
-		} else {
-			const colon = trimmed.indexOf(':');
-			if (colon > 0) {
-				headers[trimmed.slice(0, colon).trim()] = trimmed.slice(colon + 1).trim();
-			}
-		}
-	}
-
-	return { status, headers, body };
+/**
+ * Validate an SSH public key string.
+ * Returns the trimmed key on success, or null if the format is unrecognised.
+ */
+export function parsePublicKey(raw: string): string | null {
+	const trimmed = raw.trim();
+	const validPrefixes = [
+		'ssh-rsa ',
+		'ssh-ed25519 ',
+		'ecdsa-sha2-nistp256 ',
+		'ecdsa-sha2-nistp384 ',
+		'ecdsa-sha2-nistp521 ',
+		'sk-ssh-ed25519@openssh.com ',
+		'sk-ecdsa-sha2-nistp256@openssh.com '
+	];
+	if (!validPrefixes.some((p) => trimmed.startsWith(p))) return null;
+	// Must have at least key-type + base64 data (two whitespace-separated tokens)
+	const parts = trimmed.split(/\s+/);
+	if (parts.length < 2 || !parts[1]) return null;
+	return trimmed;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,9 +97,9 @@ export function isVaultRepo(repoPath: string): boolean {
 /**
  * Initialize the vault directory as a git repository ready to accept pushes.
  *
- * - Runs `git init` if not already a git repo.
+ * - `git init` if not already a git repo.
  * - Sets `receive.denyCurrentBranch = updateInstead` so Obsidian Git can push
- *   to this non-bare repo via HTTP (git will update the working tree on push).
+ *   to this non-bare repo via SSH (git updates the working tree on push).
  * - Creates an initial empty commit so the repo has a valid HEAD ref.
  *
  * Idempotent: calling again on an existing repo only re-applies the config.
@@ -157,4 +116,54 @@ export function initVaultRepo(repoPath: string): void {
 	execSync(`git -C "${repoPath}" config receive.denyCurrentBranch updateInstead`, {
 		encoding: 'utf8'
 	});
+}
+
+/**
+ * Write an SSH public key to the authorized_keys file.
+ *
+ * The key is wrapped in a managed marker block so it can be updated without
+ * disturbing other entries in the file (e.g. the user's own SSH access key).
+ * If the managed block already exists it is replaced; otherwise it is appended.
+ */
+export function writeAuthorizedKey(pubKey: string): void {
+	const keysPath = getAuthorizedKeysPath();
+	mkdirSync(path.dirname(keysPath), { recursive: true, mode: 0o700 });
+
+	let existing = '';
+	try {
+		existing = readFileSync(keysPath, 'utf8');
+	} catch {
+		/* file may not exist yet */
+	}
+
+	// Remove any existing managed block
+	const beginIdx = existing.indexOf(MARKER_BEGIN);
+	const endIdx = existing.indexOf(MARKER_END);
+	const cleaned =
+		beginIdx >= 0 && endIdx > beginIdx
+			? existing.slice(0, beginIdx) + existing.slice(endIdx + MARKER_END.length)
+			: existing;
+
+	const prefix = cleaned.trimEnd() ? cleaned.trimEnd() + '\n' : '';
+	const newContent =
+		prefix + MARKER_BEGIN + '\n' + pubKey.trim() + '\n' + MARKER_END + '\n';
+
+	writeFileSync(keysPath, newContent, { mode: 0o600 });
+}
+
+/**
+ * Read the SSH public key managed by this app from authorized_keys.
+ * Returns null if no managed block is present.
+ */
+export function readAuthorizedKey(): string | null {
+	try {
+		const content = readFileSync(getAuthorizedKeysPath(), 'utf8');
+		const beginIdx = content.indexOf(MARKER_BEGIN);
+		const endIdx = content.indexOf(MARKER_END);
+		if (beginIdx < 0 || endIdx <= beginIdx) return null;
+		const key = content.slice(beginIdx + MARKER_BEGIN.length, endIdx).trim();
+		return key || null;
+	} catch {
+		return null;
+	}
 }

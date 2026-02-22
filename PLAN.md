@@ -46,10 +46,11 @@ Obsidian Git plugin.
 | WS client | WebSocket connection with auto-reconnect; streams `text`/`tool_start`/`tool_end`/`permission_request`/`session_state`/`cost`/`error` | Phase 4 |
 | E2E tests | Playwright installed; `e2e/chat.test.ts` — server responds, login page has "Sign in with Google" link; full chat tests scaffolded (skipped; require live server) | Phase 4 → updated |
 | Deploy secrets | `scripts/deploy.sh` + CI inject `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAIL` from GitHub Secrets into server `.env` on every deploy | post-Phase 4 |
-| Git module | `git.ts` — `initVaultRepo` (git init + `receive.denyCurrentBranch=updateInstead`), `buildGitUrl`, `parseBasicAuth`, `parseGitBackendResponse`; all pure helpers exported for testing | Phase 5 |
-| Git HTTP backend | `routes/vault.git/[...path]/+server.ts` — delegates GET/POST to `git http-backend` CGI; Basic auth via `GIT_HTTP_PASSWORD`; no session cookie required | Phase 5 |
-| Vault setup | `/api/setup/vault` now calls `initVaultRepo` from `git.ts`; vault URL always `/vault.git`; `receive.denyCurrentBranch=updateInstead` applied idempotently | Phase 5 |
-| Unit tests | 163 tests across 11 suites; coverage 83.8% stmts / 80.0% branches / 81.5% fns (adds git.ts: buildGitUrl, parseBasicAuth, parseGitBackendResponse, isVaultRepo, initVaultRepo) | Phase 5 |
+| Git module | `git.ts` — `initVaultRepo`, `buildSshGitUrl`, `getSshGitUrl`, `parsePublicKey`, `getAuthorizedKeysPath`, `writeAuthorizedKey`, `readAuthorizedKey`; pure helpers exported for testing | Phase 5 → updated (SSH) |
+| SSH vault sync | Obsidian Git connects via SSH; vault remote URL is `ssh://user@host/vault/path`; public key pasted in Settings is written to `~/.ssh/authorized_keys` inside a managed marker block | Phase 5 → updated (SSH) |
+| SSH key UI | Settings page: SSH key section — shows current key (truncated), collapsible paste form, validation; `POST /api/settings/ssh/key` stores in DB + writes `authorized_keys` | Phase 5 → updated (SSH) |
+| Vault setup | `/api/setup/vault` calls `initVaultRepo` + `getSshGitUrl`; URL format `ssh://user@host/path` | Phase 5 → updated (SSH) |
+| Unit tests | 167 tests across 11 suites (adds git.ts: buildSshGitUrl, parsePublicKey, getAuthorizedKeysPath, isVaultRepo, initVaultRepo, writeAuthorizedKey, readAuthorizedKey) | Phase 5 → updated (SSH) |
 
 ### Not yet built
 Phase 6 (OAuth polling), Phase 7 (prod hardening).
@@ -729,11 +730,11 @@ pure parsers and are tested via integration tests or with mocked IO.
 8. ✓ **E2E tests (Playwright)**: `@playwright/test` installed; `e2e/` with setup, login, chat tests
 
 ### Phase 5 — Vault / Git  ✓ complete
-1. ✓ `git.ts` — `initVaultRepo` (git init + `receive.denyCurrentBranch=updateInstead`, idempotent), `buildGitUrl`, `parseBasicAuth`, `parseGitBackendResponse` (all pure helpers exported for unit tests)
-2. ✓ Git HTTP smart backend — `routes/vault.git/[...path]/+server.ts` delegates to `git http-backend` CGI; Basic auth via `GIT_HTTP_PASSWORD`; open in dev if unset
-3. ✓ Container vault mount — already handled at container start via `-v ${VAULTS_DIR}:/vault`; `receive.denyCurrentBranch=updateInstead` means Obsidian pushes update the working tree Claude reads
-4. ✓ Settings page push URL + copy button — present since Phase 2; `buildGitUrl` now the canonical source
-5. ✓ **Unit tests**: `buildGitUrl`, `parseBasicAuth`, `parseGitBackendResponse`, `isVaultRepo`, `initVaultRepo` — 24 new tests, all passing
+1. ✓ `git.ts` — `initVaultRepo` (git init + `receive.denyCurrentBranch=updateInstead`, idempotent); `buildSshGitUrl`/`getSshGitUrl`; `parsePublicKey`; `writeAuthorizedKey`/`readAuthorizedKey` (managed marker block, non-destructive)
+2. ✓ **SSH vault sync** — Obsidian Git connects via SSH; vault remote `ssh://user@host/path`; user pastes the Obsidian Git public key in Settings → written to `authorized_keys`
+3. ✓ Container vault mount — already handled at container start via `-v ${VAULTS_DIR}:/vault`; `receive.denyCurrentBranch=updateInstead` means SSH pushes update the working tree Claude reads
+4. ✓ Settings page SSH URL + copy button + SSH key management (paste, validate, save)
+5. ✓ **Unit tests**: `buildSshGitUrl`, `parsePublicKey`, `getAuthorizedKeysPath`, `isVaultRepo`, `initVaultRepo`, `writeAuthorizedKey`, `readAuthorizedKey` — 28 new tests, 167 total, all passing
 
 ### Phase 6 — OAuth Polling (Phase 2 upgrade)
 1. Reverse-engineer CLI polling mechanism (network inspection of `claude auth` run)

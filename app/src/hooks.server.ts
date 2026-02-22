@@ -17,14 +17,7 @@ export const handleError: HandleServerError = ({ error }) => {
 };
 
 // No authentication required
-// /vault.git is the git HTTP backend — auth is handled by GIT_HTTP_PASSWORD, not the session cookie
-const PUBLIC_PATHS = [
-	'/login',
-	'/api/health',
-	'/api/auth/google',
-	'/api/auth/callback',
-	'/vault.git'
-];
+const PUBLIC_PATHS = ['/login', '/api/health', '/api/auth/google', '/api/auth/callback'];
 
 // Authentication required, but setup_complete is not (these complete the setup)
 const SETUP_PATHS = ['/setup', '/api/setup'];

@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { setConfig } from '$lib/server/db/index.js';
 import { mkdirSync } from 'fs';
-import { initVaultRepo, buildGitUrl } from '$lib/server/git.js';
+import { initVaultRepo, getSshGitUrl } from '$lib/server/git.js';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const { vaultPath } = await request.json();
@@ -15,13 +15,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Create the directory if it doesn't exist
 	mkdirSync(resolved, { recursive: true });
 
-	// Initialise as a git repo configured to accept Obsidian Git pushes
+	// Initialise as a git repo configured to accept Obsidian Git pushes via SSH
 	initVaultRepo(resolved);
 
 	setConfig('vault_path', resolved);
 
 	const publicUrl = process.env.PUBLIC_URL ?? 'http://localhost:5173';
-	const gitUrl = buildGitUrl(publicUrl);
+	const host = new URL(publicUrl).hostname;
+	const gitUrl = getSshGitUrl(host, resolved);
 	setConfig('vault_git_remote', gitUrl);
 
 	// Mark setup as complete now that all required steps are done
