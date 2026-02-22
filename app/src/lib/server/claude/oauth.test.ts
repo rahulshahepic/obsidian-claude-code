@@ -98,13 +98,13 @@ describe('buildAuthorizationUrl', () => {
 
 	it('uses the default Claude Code client_id', () => {
 		const url = new URL(buildAuthorizationUrl({ codeChallenge: 'c', state: 's' }));
-		expect(url.searchParams.get('client_id')).toBe('9d1c250a-d963-4f45-acb0-9e66a5a1be0e');
+		expect(url.searchParams.get('client_id')).toBe('9d1c250a-e61b-44d9-88ed-5944d1962f5e');
 	});
 
 	it('uses the Anthropic-controlled default redirect_uri', () => {
 		const url = new URL(buildAuthorizationUrl({ codeChallenge: 'c', state: 's' }));
 		expect(url.searchParams.get('redirect_uri')).toBe(
-			'https://console.anthropic.com/oauth/code/callback'
+			'https://platform.claude.com/oauth/code/callback'
 		);
 	});
 
@@ -295,7 +295,7 @@ describe('exchangeCode', () => {
 		expect(body.get('grant_type')).toBe('authorization_code');
 		expect(body.get('code')).toBe('the-code');
 		expect(body.get('code_verifier')).toBe('the-verifier');
-		expect(body.get('redirect_uri')).toBe('https://console.anthropic.com/oauth/code/callback');
+		expect(body.get('redirect_uri')).toBe('https://platform.claude.com/oauth/code/callback');
 	});
 
 	it('defaults to 8-hour expiry when expires_in is omitted', async () => {

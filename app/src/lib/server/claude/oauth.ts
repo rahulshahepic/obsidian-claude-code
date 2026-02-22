@@ -61,8 +61,8 @@ export function buildAuthorizationUrl(params: {
 	const {
 		codeChallenge,
 		state,
-		clientId = '9d1c250a-d963-4f45-acb0-9e66a5a1be0e',
-		redirectUri = 'https://console.anthropic.com/oauth/code/callback',
+		clientId = '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+		redirectUri = 'https://platform.claude.com/oauth/code/callback',
 		scope = 'user:profile user:inference user:sessions:claude_code user:mcp_servers'
 	} = params;
 
@@ -104,7 +104,7 @@ export function needsRefresh(
 // network inspection of `claude auth login`. This follows the standard RFC 6749
 // token endpoint convention. Update TOKEN_ENDPOINT when confirmed.
 const TOKEN_ENDPOINT = 'https://console.anthropic.com/v1/oauth/token';
-const CLIENT_ID = '9d1c250a-d963-4f45-acb0-9e66a5a1be0e';
+const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 
 /**
  * Exchange an authorization code (from the OAuth callback page) for tokens.
@@ -120,7 +120,7 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
 			code,
 			code_verifier: codeVerifier,
 			client_id: CLIENT_ID,
-			redirect_uri: 'https://console.anthropic.com/oauth/code/callback'
+			redirect_uri: 'https://platform.claude.com/oauth/code/callback'
 		})
 	});
 
