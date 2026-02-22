@@ -39,5 +39,17 @@
 				{item.label}
 			</a>
 		{/each}
+
+		<!-- Sign out — POST so the server can delete the cookie -->
+		<form method="POST" action="/api/auth/signout" class="flex flex-1">
+			<button
+				type="submit"
+				class="flex flex-1 flex-col items-center gap-0.5 py-3 text-xs
+                       text-slate-500 active:text-slate-300 transition"
+			>
+				<span class="text-xl leading-none">🔓</span>
+				Sign out
+			</button>
+		</form>
 	</nav>
 {/if}
