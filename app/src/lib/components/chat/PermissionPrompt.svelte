@@ -14,12 +14,12 @@
 	} = $props();
 
 	// Show a short preview of what the tool will do
-	const commandPreview = $derived(() => {
+	const commandPreview = $derived.by(() => {
 		if (input.command && typeof input.command === 'string') return input.command;
 		if (input.path && typeof input.path === 'string') return input.path;
 		if (input.file_path && typeof input.file_path === 'string') return input.file_path;
 		return JSON.stringify(input, null, 2);
-	})();
+	});
 </script>
 
 <!-- Backdrop -->
