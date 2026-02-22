@@ -31,8 +31,10 @@ describe('crypto', () => {
 		it('throws on tampered ciphertext (auth tag fails)', () => {
 			const enc = encrypt('hello');
 			const [iv, tag, ct] = enc.split(':');
-			// flip last char of ciphertext
-			const tampered = `${iv}:${tag}:${ct.slice(0, -1)}f`;
+			// flip last hex char to something different (avoid no-op if already 'f')
+			const lastChar = ct[ct.length - 1];
+			const replacement = lastChar === 'f' ? 'e' : 'f';
+			const tampered = `${iv}:${tag}:${ct.slice(0, -1)}${replacement}`;
 			expect(() => decrypt(tampered)).toThrow();
 		});
 

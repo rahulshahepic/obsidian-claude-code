@@ -11,6 +11,29 @@ Obsidian Git plugin.
 
 ---
 
+## Current Status — last updated 2026-02-22
+
+### Done
+| Area | What's built | Commit |
+|---|---|---|
+| App scaffold | SvelteKit + Tailwind v4 + adapter-node + PWA manifest + iOS meta tags | Phase 1 |
+| Database | Drizzle ORM + SQLite, `config` + `sessions` schema, initial migration | Phase 1 |
+| Encryption | AES-256-GCM (`crypto.ts`) for token storage at rest | Phase 1 |
+| Auth | WebAuthn/Passkeys — registration + authentication ceremonies, HMAC-signed session cookie | Phase 1 |
+| Route guards | `hooks.server.ts` — redirects to `/setup` if not configured, `/login` if not authed | Phase 1 |
+| Setup wizard | `/setup` — passkey registration → Claude token paste → vault path config | Phase 1 |
+| Login page | `/login` — WebAuthn authenticate, `return_to` redirect after success | Phase 1 |
+| Monitoring | `monitor.ts` with exported pure parsers; `/api/health` (unauthenticated, 200/503); `/api/monitor`; `/monitor` page with auto-refresh | Phase 1 |
+| Unit tests | 46 tests across 4 suites (crypto, session, monitor parsers, db); all passing | Phase 1 |
+| CI | GitHub Actions — runs `vitest --coverage` on every PR; blocks merge if thresholds missed | Phase 1 |
+
+### Not yet built
+Phase 2 (Claude auth token refresh + settings page), Phase 3 (Docker container + session manager + WebSocket), Phase 4 (Chat UI), Phase 5 (Vault/Git), Phase 6 (OAuth polling), Phase 7 (prod hardening).
+
+### Next up → Phase 2
+
+---
+
 ## What Changed From v1 (and Why)
 
 The original plan assumed users could link their claude.ai subscription via OAuth to run Claude
@@ -190,79 +213,77 @@ with approve/deny on mobile.
 
 ```
 obsidian-claude-code/
-├── PLAN.md
-├── docker-compose.yml          ← single compose file (dev flag = build target)
-├── Caddyfile
-├── .env.example
+├── PLAN.md                        ✓
+├── .env.example                   ✓
+├── .github/workflows/ci.yml       ✓  vitest + coverage gate on every PR
 │
-├── container/
-│   ├── Dockerfile              ← workspace container image
+├── docker-compose.yml             ← Phase 7
+├── Caddyfile                      ← Phase 7
+│
+├── container/                     ← Phase 3
+│   ├── Dockerfile
 │   ├── entrypoint.sh
-│   └── docker-exec-wrapper.sh  ← script set as pathToClaudeCodeExecutable
+│   └── docker-exec-wrapper.sh
 │
 └── app/
-    ├── package.json
-    ├── svelte.config.js
-    ├── vite.config.ts
-    ├── src/
-    │   ├── app.html             ← PWA meta tags
-    │   ├── service-worker.ts
-    │   │
-    │   ├── lib/
-    │   │   ├── server/
-    │   │   │   ├── db/
-    │   │   │   │   ├── schema.ts
-    │   │   │   │   └── index.ts
-    │   │   │   ├── auth/
-    │   │   │   │   └── webauthn.ts    ← SimpleWebAuthn server, session cookie
-    │   │   │   ├── claude/
-    │   │   │   │   ├── oauth.ts       ← PKCE flow, token polling, token refresh
-    │   │   │   │   └── session-manager.ts ← query() wrapper, canUseTool bridge
-    │   │   │   ├── docker.ts          ← container lifecycle (start, exec, stop)
-    │   │   │   ├── monitor.ts         ← system stats: CPU/mem/disk, container status
-    │   │   │   └── git.ts             ← bare repo init/management
-    │   │   │
-    │   │   ├── components/
-    │   │   │   ├── chat/
-    │   │   │   │   ├── MessageList.svelte
-    │   │   │   │   ├── Message.svelte
-    │   │   │   │   ├── DiffViewer.svelte
-    │   │   │   │   ├── PermissionPrompt.svelte  ← approve/deny sheet
-    │   │   │   │   ├── ToolCallCard.svelte
-    │   │   │   │   └── CommandBar.svelte
-    │   │   │   └── ui/              ← Button, Sheet, Badge, etc.
-    │   │   │
-    │   │   └── ws-protocol.ts     ← TypeScript types for all WebSocket messages
-    │   │
-    │   └── routes/
-    │       ├── +layout.svelte     ← mobile shell, auth guard
-    │       ├── +page.svelte       ← chat UI
-    │       ├── login/
-    │       │   └── +page.svelte   ← WebAuthn authenticate
-    │       ├── setup/
-    │       │   └── +page.svelte   ← wizard (passkey → claude auth → vault)
-    │       ├── settings/
-    │       │   └── +page.svelte   ← claude auth status, vault URL, refresh token
-    │       ├── monitor/
-    │       │   └── +page.svelte   ← system health, usage stats
-    │       └── api/
-    │           ├── auth/
-    │           │   ├── register/+server.ts   ← WebAuthn registration ceremony
-    │           │   └── login/+server.ts      ← WebAuthn authentication ceremony
-    │           ├── health/
-    │           │   └── +server.ts   ← JSON health check (unauthenticated)
-    │           ├── setup/
-    │           │   ├── claude/start/+server.ts   ← initiate PKCE, return OAuth URL
-    │           │   ├── claude/poll/+server.ts     ← poll for auth completion
-    │           │   └── vault/+server.ts
-    │           ├── session/
-    │           │   └── +server.ts
-    │           └── ws/
-    │               └── +server.ts  ← WebSocket upgrade
-    │
-    └── static/
-        ├── manifest.json
-        └── icons/
+    ├── package.json               ✓
+    ├── svelte.config.js           ✓  adapter-node
+    ├── vite.config.ts             ✓  Tailwind v4, vitest config
+    ├── drizzle.config.ts          ✓
+    ├── drizzle/                   ✓  initial migration generated
+    └── src/
+        ├── app.html               ✓  PWA + iOS meta tags
+        ├── app.css                ✓  Tailwind import
+        ├── test-setup.ts          ✓  vitest global env vars
+        ├── hooks.server.ts        ✓  setup + auth route guards
+        ├── service-worker.ts      ← Phase 7
+        │
+        ├── lib/server/
+        │   ├── crypto.ts          ✓  AES-256-GCM encrypt/decrypt
+        │   ├── monitor.ts         ✓  health + monitor snapshots, pure parsers exported
+        │   ├── db/
+        │   │   ├── schema.ts      ✓  config + sessions tables
+        │   │   └── index.ts       ✓  drizzle instance, getConfig/setConfig/deleteConfig
+        │   ├── auth/
+        │   │   ├── webauthn.ts    ✓  registration + authentication ceremonies
+        │   │   └── session.ts     ✓  HMAC-signed cookie, createSession/getSession
+        │   ├── claude/
+        │   │   ├── oauth.ts       ← Phase 2  PKCE flow, token refresh
+        │   │   └── session-manager.ts ← Phase 3  query() + canUseTool bridge
+        │   ├── docker.ts          ← Phase 3  container lifecycle
+        │   └── git.ts             ← Phase 5  bare repo management
+        │
+        ├── lib/components/        ← Phase 4
+        │   ├── chat/
+        │   │   ├── MessageList.svelte
+        │   │   ├── Message.svelte
+        │   │   ├── DiffViewer.svelte
+        │   │   ├── PermissionPrompt.svelte
+        │   │   ├── ToolCallCard.svelte
+        │   │   └── CommandBar.svelte
+        │   └── ui/
+        │
+        ├── lib/ws-protocol.ts     ← Phase 3  WebSocket message types
+        │
+        └── routes/
+            ├── +layout.svelte     ✓  bottom nav (Chat / Monitor / Settings)
+            ├── +page.svelte       ✓  placeholder (Phase 4: real chat UI)
+            ├── login/+page.svelte ✓  WebAuthn authenticate
+            ├── setup/+page.svelte ✓  wizard: passkey → token → vault
+            ├── monitor/           ✓  +page.svelte + +page.server.ts
+            ├── settings/          ← Phase 2  +page.svelte
+            └── api/
+                ├── auth/register/ ✓  WebAuthn registration ceremony
+                ├── auth/login/    ✓  WebAuthn authentication ceremony
+                ├── health/        ✓  unauthenticated JSON health check
+                ├── monitor/       ✓  authenticated full snapshot
+                ├── setup/
+                │   ├── claude/token/ ✓  save token, mark setup complete
+                │   ├── claude/start/ ← Phase 6  initiate PKCE OAuth
+                │   ├── claude/poll/  ← Phase 6  poll for auth code
+                │   └── vault/     ✓  init git repo, return push URL
+                ├── session/       ← Phase 3
+                └── ws/            ← Phase 3  WebSocket upgrade
 ```
 
 ---
@@ -466,28 +487,31 @@ services:
 
 ---
 
-## Setup Wizard Flow
+## Setup Wizard Flow ✓ (built)
 
 ```
-First visit (not set up):
-  /setup
-    Step 1: Choose password
-            [password] [confirm] → POST /api/setup/password
-    Step 2: Authenticate with Claude
-            Two options:
-            a) [Open Claude OAuth] → opens claude.ai OAuth in new tab
-               wait for completion (polling) → show ✓ when done
-            b) "Or paste a token from 'claude setup-token'"
-               [token input] → POST /api/setup/claude/token
-    Step 3: Configure vault
-            Git remote URL the Obsidian app should push to:
-            [  https://your-vps.com/vault.git  ]  (auto-filled, read-only)
-            [Done]
+First visit (not set up) → /setup
+
+  Step 1: Create your passkey
+          [Create Passkey] → browser prompts Face ID / Touch ID / hardware key
+          POST /api/auth/register (WebAuthn registration ceremony)
+
+  Step 2: Link Claude account
+          Instructions to run `claude setup-token` locally.
+          [textarea: paste sk-ant-oat01-…] → POST /api/setup/claude/token
+          Token encrypted with AES-256-GCM, stored in config table.
+          setup_complete = 'true' set here; session cookie issued immediately.
+
+  Step 3: Configure vault
+          [input: /var/vault] → POST /api/setup/vault
+          Creates directory + git init if needed.
+          Returns git push URL shown to user (copy for Obsidian Git plugin).
+
   → redirect to /
 
-Subsequent visits:
-  /login
-    [password] → 30-day session cookie → redirect to /
+Subsequent visits → /login
+  [Use Passkey] → browser biometric prompt → POST /api/auth/login
+  → 30-day session cookie → redirect to return_to or /
 ```
 
 ---
@@ -620,16 +644,19 @@ pure parsers and are tested via integration tests or with mocked IO.
 
 ## Implementation Phases
 
-### Phase 1 — Foundation ✓
-1. SvelteKit app scaffold: Tailwind, PWA manifest, iOS meta tags
-2. Drizzle schema (config + sessions tables) + SQLite setup
-3. Passkey auth: `@simplewebauthn/server`, session cookie, route guard
-4. Setup wizard: passkey + Claude token + vault steps
-5. `/api/health` and `/api/monitor` endpoints, `/monitor` page
-6. `/` placeholder chat UI
-7. **Unit tests**: `crypto.ts`, `session.ts`, `monitor.ts` parsers, `db/index.ts`
+### Phase 1 — Foundation ✓ complete
+1. ✓ SvelteKit app scaffold: Tailwind v4, adapter-node, PWA manifest + iOS meta tags
+2. ✓ Drizzle schema (config + sessions tables), initial migration, `getConfig`/`setConfig`/`deleteConfig`
+3. ✓ AES-256-GCM encryption (`crypto.ts`) for sensitive config values
+4. ✓ Passkey auth: `@simplewebauthn/server`, HMAC-signed session cookie, route guard (`hooks.server.ts`)
+5. ✓ Setup wizard: passkey registration → Claude token paste → vault path config
+6. ✓ Login page with WebAuthn biometric prompt
+7. ✓ `monitor.ts` with exported pure parsers; `/api/health` (200/503); `/api/monitor`; `/monitor` page (auto-refresh 30s)
+8. ✓ `.env.example`
+9. ✓ Vitest + `@vitest/coverage-v8`; 46 unit tests passing; 80/75/80 coverage thresholds
+10. ✓ GitHub Actions CI (`.github/workflows/ci.yml`): runs `test:coverage` on every PR, blocks merge on threshold miss
 
-### Phase 2 — Claude Auth
+### Phase 2 — Claude Auth  ← NEXT
 1. `claude/oauth.ts`: PKCE generation, OAuth URL construction
 2. Setup wizard Claude auth step (token-paste path first)
 3. Token storage (encrypted in config table)
@@ -675,7 +702,7 @@ pure parsers and are tested via integration tests or with mocked IO.
 3. Container resource limits (memory, CPU, PIDs)
 4. Network isolation (`claude-net` bridge, no host access)
 5. Log rotation, startup script / systemd unit
-6. **CI pipeline**: vitest unit tests + coverage gate on every PR
+   ~~CI pipeline~~ — done in Phase 1
 
 ---
 
