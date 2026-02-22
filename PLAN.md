@@ -1,60 +1,93 @@
-# Obsidian Claude Code — Architecture Plan
+# Obsidian Claude Code — Architecture Plan (v2)
 
 ## What This Is
 
-A self-hosted web app (PWA) that lets you run Claude Code sessions from your phone, with
-your Obsidian vault synced via Git. You chat with Claude Code, it reads/writes your notes,
-and the Obsidian Android/iOS app syncs changes via the Obsidian Git plugin.
+A self-hosted web app (PWA) that **one person deploys on their own VPS** to run Claude Code
+sessions from their phone, with their Obsidian vault synced via Git. You chat with Claude Code
+in a mobile browser, it reads/writes your vault, and the Obsidian app syncs changes via the
+Obsidian Git plugin.
+
+**Single-user, self-hosted.** You deploy it for yourself. No accounts, no multi-tenancy.
 
 ---
 
-## Design Decisions (Non-Negotiable)
+## What Changed From v1 (and Why)
 
-### 1. Mobile-First, No Desktop Assumptions
-Every screen — chat, admin, monitoring, settings, debug — is designed for a phone screen
-first. Nothing assumes a mouse, hover state, or wide viewport.
+The original plan assumed users could link their claude.ai subscription via OAuth to run Claude
+Code on your server on their behalf. This is **explicitly prohibited by Anthropic's ToS** (updated
+Feb 17-18 2026): third-party developers may not offer claude.ai login or subscription rate limits
+for their products — and GitHub issue #6536 requesting SDK support for this was closed as
+"not planned."
 
-### 2. User Approval Workflow
-New users who sign in land in `pending` state and cannot start sessions until an admin
-approves them. The deploy script seeds an initial admin by Google email; that account
-is both a normal user and an admin. The admin panel is a mobile-first screen in the
-same SvelteKit app.
+**New model**: Each person deploys their own instance. They authenticate their own Claude
+account during the one-time setup wizard. Their subscription is used by their own VPS — no
+third party involved, just you running Claude Code on a computer you own.
 
-### 3. Two-Factor Auth (Identity + Subscription)
-- **Google OAuth** — identifies who you are, creates/restores your web app session
-- **Claude.ai OAuth** — links your Claude subscription so Claude Code runs on *your*
-  claude.ai account (Claude Max/Pro). You absorb zero API costs.
+Side effects of this pivot:
+- No Google OAuth, no multi-user system, no admin panel
+- No per-user isolation complexity
+- The whole codebase is dramatically simpler
+- The deploy story becomes "clone, run setup, done"
 
-After admin approval, users are prompted to complete the Claude.ai OAuth link. Once both
-are done, they can start sessions. Claude credentials are stored encrypted in SQLite per
-user and injected into their container at session start.
+---
 
-### 4. iOS + Android PWA
-Both platforms. Known iOS PWA limits to work around:
-- No background sync (not needed — vault sync is Git-based via Obsidian app)
-- Proper `apple-mobile-web-app-*` meta tags
-- Avoid features not supported in Safari (no push notifications initially)
-- Safe area insets (`env(safe-area-inset-*)`) everywhere
+## Design Decisions
 
-### 5. Powerful but Isolated User Containers
-Each user's Claude Code session runs in a Docker container with:
-- Claude Code CLI (via `@anthropic-ai/claude-code` SDK or binary)
-- Python 3 + pip + uv
-- Node.js + npm
-- Git
-- ripgrep, fd, jq, curl, wget
-- Resource limits: CPU quota, memory limit, disk quota
-- Network: can reach the internet (for Claude API), cannot reach host network or other
-  user containers
+### 1. Mobile-First PWA
+Every screen is designed for a phone screen. Nothing assumes a mouse or wide viewport.
+Safe area insets, touch targets ≥ 44px, proper `apple-mobile-web-app-*` tags.
+
+### 2. Single-User, Password-Protected
+The setup wizard creates one local password. All subsequent access (web UI + Obsidian plugin
+WebSocket) requires this password. No accounts, no sessions per user — just "you are logged in
+or you are not."
+
+### 3. Claude Auth via OAuth Setup Page
+On first setup, the wizard walks you through authenticating with your Claude account.
+The VPS initiates the CLI's PKCE OAuth flow. Since the callback URI is fixed to
+`https://console.anthropic.com/oauth/code/callback` (Anthropic-controlled), we use a
+**two-phase approach**:
+
+- **Primary (browser-initiated)**: VPS generates PKCE params + state. You're redirected to
+  `claude.ai/oauth/authorize`. After you authenticate, Anthropic's callback page handles the
+  code. The VPS polls a known Anthropic endpoint using the `state` value to retrieve the
+  authorization code (replicating the CLI's internal polling mechanism — to be reverse-engineered
+  from the CLI binary or confirmed via network traffic inspection).
+
+- **Fallback (token paste)**: If the polling mechanism can't be confirmed, the setup wizard
+  shows a "run this command and paste the result" step: `claude setup-token`. This is
+  Anthropic's own headless mechanism and always works. The VPS stores the token as
+  `CLAUDE_CODE_OAUTH_TOKEN`.
+
+The VPS stores credentials in `~/.claude/credentials.json` (same format as the CLI) or in
+the app's SQLite config. Token refresh is handled via the refresh token.
+
+### 4. Claude Agent SDK — Host-Side
+The `@anthropic-ai/claude-agent-sdk` runs on the VPS host. It spawns Claude Code CLI as a
+subprocess. Two integration points matter here:
+
+- **`options.env`** — this is where `CLAUDE_CODE_OAUTH_TOKEN` is injected per session
+- **`options.canUseTool`** — async callback that resolves to allow/deny. This is how permission
+  prompts work: the callback suspends the session and sends a `permission_request` event over
+  WebSocket; when the user taps Allow/Deny on their phone, the callback resolves.
+
+There is no `apiKey` param — credentials are entirely env-based.
+
+### 5. Docker for Tool Execution Isolation
+The SDK spawns the Claude Code CLI as a subprocess. That CLI's Bash tool runs shell commands
+on the host — which is unacceptable on a shared machine. Solution: `pathToClaudeCodeExecutable`
+is set to a wrapper script that runs `claude` **inside a Docker container** via `docker exec`.
+
+The VPS maintains one persistent "workspace container" (or one per active session). The container
+has Python, Node.js, Git, all standard tools, and the user's vault mounted. The host-side SDK
+communicates with the containerised CLI via subprocess stdin/stdout (docker exec -i bridges this
+naturally).
+
+Resource limits are applied at container creation time.
 
 ### 6. Full Claude Code Experience
-The WebSocket protocol between browser and server exposes *all* Claude Code events:
-- Streaming text output
-- File diffs (rendered as mobile-friendly unified diffs)
-- `/commands` (passed through to Claude Code)
-- Tool calls visible to user (which tool, which args)
-- **Permission prompts**: when Claude Code wants to run bash or write files, the UI shows
-  a mobile-friendly approve/deny dialog. Response goes back to the session.
+Same as before: streaming text, tool call cards, file diffs, `/commands`, and permission prompts
+with approve/deny on mobile.
 
 ---
 
@@ -62,67 +95,67 @@ The WebSocket protocol between browser and server exposes *all* Claude Code even
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  Phone (Android or iOS)                                  │
+│  Phone                                                   │
 │  ┌──────────────┐   ┌────────────────────────────────┐  │
 │  │ Obsidian App │   │ Chrome/Safari PWA               │  │
 │  │ + Git plugin │   │  Chat UI                        │  │
-│  │              │   │  Admin Panel (if admin)          │  │
-│  │              │   │  Settings / API key link         │  │
+│  │              │   │  Settings                        │  │
+│  │              │   │  Setup wizard (first run)        │  │
 │  └──────┬───────┘   └──────────────┬─────────────────┘  │
 └─────────┼──────────────────────────┼────────────────────┘
           │ git push/pull            │ WebSocket + HTTPS
           ▼                          ▼
 ┌──────────────────────────────────────────────────────────┐
-│  VPS (Hetzner CX22 — Ubuntu 24.04)                       │
+│  Your VPS (Ubuntu 24.04)                                 │
 │                                                          │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │ Caddy  (reverse proxy, auto-HTTPS, port 443)     │   │
 │  └──────────────────────┬─────────────────────────┘    │
 │                         │                                │
 │  ┌──────────────────────▼─────────────────────────┐    │
-│  │ SvelteKit App  (port 3000 dev / 3001 prod)      │    │
+│  │ SvelteKit App  (Node, port 3000/3001)            │    │
 │  │                                                  │    │
 │  │  Pages                                           │    │
-│  │    /          → chat UI                          │    │
-│  │    /admin     → user approval, session monitor   │    │
-│  │    /settings  → Claude.ai link, API key, prefs   │    │
-│  │    /auth/*    → Google + Claude.ai OAuth flows   │    │
+│  │    /          → chat UI (login-gated)            │    │
+│  │    /setup     → first-time setup wizard          │    │
+│  │    /login     → password entry                   │    │
+│  │    /settings  → Claude auth status, vault config │    │
 │  │                                                  │    │
-│  │  API routes (SvelteKit server)                   │    │
-│  │    /api/auth/*        OAuth callbacks            │    │
-│  │    /api/admin/*       User management            │    │
-│  │    /api/session/*     Start/stop sessions        │    │
-│  │    /api/ws            WebSocket upgrade           │    │
+│  │  API routes                                      │    │
+│  │    /api/auth/login       password check          │    │
+│  │    /api/setup/*          setup wizard steps      │    │
+│  │    /api/session/*        start/stop/status       │    │
+│  │    /api/ws               WebSocket upgrade        │    │
 │  └──────────────────────┬─────────────────────────┘    │
 │                         │                                │
 │  ┌──────────────────────▼─────────────────────────┐    │
-│  │ Session Manager (Node.js service, same process) │    │
-│  │  - Spawns/stops Docker containers per user      │    │
-│  │  - Bridges WebSocket ↔ Claude Code SDK events   │    │
-│  │  - Manages permission prompt round-trips        │    │
-│  │  - Handles user vault directories               │    │
-│  └───────────┬────────────────────┬───────────────┘    │
-│              │                    │                      │
-│  ┌───────────▼──────┐  ┌─────────▼──────────────┐     │
-│  │ User Container 1 │  │ User Container 2 ...    │     │
-│  │  Claude Code CLI │  │  Claude Code CLI        │     │
-│  │  Python, Node    │  │  Python, Node           │     │
-│  │  /vault (git)    │  │  /vault (git)           │     │
-│  │  ~/.claude/creds │  │  ~/.claude/creds        │     │
-│  └──────────────────┘  └─────────────────────────┘     │
+│  │ Session Manager (in-process Node.js module)     │    │
+│  │  - Calls @anthropic-ai/claude-agent-sdk query() │    │
+│  │  - pathToClaudeCodeExecutable → docker-exec.sh  │    │
+│  │  - canUseTool → WebSocket permission round-trip  │    │
+│  │  - Bridges SDK message stream → WebSocket        │    │
+│  │  - CLAUDE_CODE_OAUTH_TOKEN injected via env      │    │
+│  └───────────────────────┬──────────────────────┘     │
+│                          │ docker exec -i               │
+│  ┌───────────────────────▼──────────────────────┐     │
+│  │ Workspace Container (Docker)                  │     │
+│  │  ubuntu:24.04                                 │     │
+│  │  claude (CLI binary)                          │     │
+│  │  Python 3 + pip + uv                          │     │
+│  │  Node.js + npm                                │     │
+│  │  Git, ripgrep, fd, jq, curl                   │     │
+│  │  /vault  ← bind-mounted from host             │     │
+│  │  Resource limits: memory, CPU, pids           │     │
+│  └───────────────────────────────────────────────┘     │
 │                                                          │
 │  ┌──────────────────────────────────────────────────┐   │
-│  │ SQLite (via Drizzle ORM)                         │   │
-│  │  users: id, google_id, email, role, status       │   │
-│  │  claude_creds: user_id, encrypted_tokens         │   │
-│  │  sessions: id, user_id, container_id, started_at │   │
-│  │  git_repos: user_id, repo_path, remote_url       │   │
+│  │ SQLite  ./data/app.db                            │   │
+│  │  config: key, value  (credentials, vault path)   │   │
+│  │  sessions: id, started_at, ended_at, status      │   │
 │  └──────────────────────────────────────────────────┘   │
 │                                                          │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │ Git bare repos  /var/vaults/<user_id>.git        │   │
-│  │  (phone pushes here, container clones from here) │   │
-└──────────────────────────────────────────────────────┘
+│  /var/vault/  ← git bare repo (Obsidian pushes here)    │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -131,15 +164,16 @@ The WebSocket protocol between browser and server exposes *all* Claude Code even
 
 | Layer | Choice | Reason |
 |---|---|---|
-| Frontend + API | SvelteKit | Small bundle, fast on mobile, great PWA support, single codebase |
-| Styling | Tailwind CSS (mobile-first) | Utility-first, easy to enforce mobile-first patterns |
-| Auth (identity) | Google OAuth 2.0 | Reliable IDP, widely used, works on all devices |
-| Auth (Claude) | Claude.ai OAuth | Users use their own subscription, no API cost to server |
-| Database | SQLite via Drizzle ORM | Zero-config, fast, perfect for single-VPS scale |
-| Claude Code | `@anthropic-ai/claude-code` SDK | Programmatic session control, event streaming |
-| Containers | Docker + Docker Compose | Isolate user sessions, resource limits |
-| Reverse Proxy | Caddy | Auto-HTTPS with one line config |
-| Vault Sync | Git bare repos on VPS | Obsidian Git plugin pushes/pulls natively |
+| Frontend + API | SvelteKit | Small bundle, fast on mobile, great PWA support |
+| Styling | Tailwind CSS | Utility-first, enforces mobile-first discipline |
+| Auth | Local password (bcrypt) | Single-user, no external IDP needed |
+| Claude auth | Claude.ai OAuth (own account) | Your subscription, your VPS, no ToS issue |
+| Claude SDK | `@anthropic-ai/claude-agent-sdk` | Official SDK with `canUseTool`, streaming, env injection |
+| Container | Docker (single workspace container) | Bash tool isolation, Python/Node environment |
+| Container bridge | `pathToClaudeCodeExecutable` wrapper | SDK on host, Claude CLI in container |
+| Database | SQLite via Drizzle ORM | Zero-config, no network, perfect for single-user |
+| Reverse proxy | Caddy | Auto-HTTPS, one-line config |
+| Vault sync | Git bare repo on VPS | Obsidian Git plugin push/pulls natively |
 
 ---
 
@@ -147,183 +181,207 @@ The WebSocket protocol between browser and server exposes *all* Claude Code even
 
 ```
 obsidian-claude-code/
-├── PLAN.md                        ← this file
-├── docker-compose.dev.yml
-├── docker-compose.prod.yml
+├── PLAN.md
+├── docker-compose.yml          ← single compose file (dev flag = build target)
 ├── Caddyfile
 ├── .env.example
 │
-├── container/                     ← Docker image for user sessions
-│   ├── Dockerfile                 ← Claude Code + Python + Node + tools
-│   └── entrypoint.sh
+├── container/
+│   ├── Dockerfile              ← workspace container image
+│   ├── entrypoint.sh
+│   └── docker-exec-wrapper.sh  ← script set as pathToClaudeCodeExecutable
 │
-└── app/                           ← SvelteKit application
+└── app/
     ├── package.json
     ├── svelte.config.js
     ├── vite.config.ts
     ├── src/
-    │   ├── app.html               ← PWA meta tags (iOS + Android)
-    │   ├── service-worker.ts      ← PWA offline shell
+    │   ├── app.html             ← PWA meta tags
+    │   ├── service-worker.ts
     │   │
     │   ├── lib/
     │   │   ├── server/
     │   │   │   ├── db/
-    │   │   │   │   ├── schema.ts  ← Drizzle schema
-    │   │   │   │   └── index.ts   ← DB connection
+    │   │   │   │   ├── schema.ts
+    │   │   │   │   └── index.ts
     │   │   │   ├── auth/
-    │   │   │   │   ├── google.ts  ← Google OAuth helpers
-    │   │   │   │   └── claude.ts  ← Claude.ai OAuth helpers
-    │   │   │   ├── session-manager.ts  ← spawn/stop containers, WS bridge
-    │   │   │   ├── docker.ts      ← Docker API wrapper
-    │   │   │   └── git.ts         ← bare repo management
+    │   │   │   │   └── password.ts    ← bcrypt verify, session cookie
+    │   │   │   ├── claude/
+    │   │   │   │   ├── oauth.ts       ← PKCE flow, token polling, token refresh
+    │   │   │   │   └── session-manager.ts ← query() wrapper, canUseTool bridge
+    │   │   │   ├── docker.ts          ← container lifecycle (start, exec, stop)
+    │   │   │   └── git.ts             ← bare repo init/management
     │   │   │
     │   │   ├── components/
     │   │   │   ├── chat/
     │   │   │   │   ├── MessageList.svelte
     │   │   │   │   ├── Message.svelte
-    │   │   │   │   ├── DiffViewer.svelte   ← mobile-friendly unified diff
-    │   │   │   │   ├── PermissionPrompt.svelte  ← approve/deny dialog
+    │   │   │   │   ├── DiffViewer.svelte
+    │   │   │   │   ├── PermissionPrompt.svelte  ← approve/deny sheet
     │   │   │   │   ├── ToolCallCard.svelte
-    │   │   │   │   └── CommandBar.svelte   ← / commands input
-    │   │   │   ├── admin/
-    │   │   │   │   ├── UserList.svelte
-    │   │   │   │   ├── SessionMonitor.svelte
-    │   │   │   │   └── ApproveCard.svelte
-    │   │   │   └── ui/            ← shared primitives (Button, Sheet, etc.)
+    │   │   │   │   └── CommandBar.svelte
+    │   │   │   └── ui/              ← Button, Sheet, Badge, etc.
     │   │   │
-    │   │   └── ws-protocol.ts     ← TypeScript types for WebSocket messages
+    │   │   └── ws-protocol.ts     ← TypeScript types for all WebSocket messages
     │   │
     │   └── routes/
-    │       ├── +layout.svelte     ← mobile shell, bottom nav
+    │       ├── +layout.svelte     ← mobile shell, auth guard
     │       ├── +page.svelte       ← chat UI
-    │       ├── admin/
-    │       │   └── +page.svelte   ← admin panel (guarded)
+    │       ├── login/
+    │       │   └── +page.svelte
+    │       ├── setup/
+    │       │   └── +page.svelte   ← wizard (password → claude auth → vault)
     │       ├── settings/
-    │       │   └── +page.svelte   ← link Claude account, git config
+    │       │   └── +page.svelte   ← claude auth status, vault URL, refresh token
     │       └── api/
     │           ├── auth/
-    │           │   ├── google/callback/+server.ts
-    │           │   └── claude/callback/+server.ts
-    │           ├── admin/
-    │           │   └── users/+server.ts
+    │           │   └── login/+server.ts
+    │           ├── setup/
+    │           │   ├── password/+server.ts
+    │           │   ├── claude/start/+server.ts   ← initiate PKCE, return OAuth URL
+    │           │   ├── claude/poll/+server.ts     ← poll for auth completion
+    │           │   └── vault/+server.ts
     │           ├── session/
     │           │   └── +server.ts
     │           └── ws/
     │               └── +server.ts  ← WebSocket upgrade
     │
     └── static/
-        ├── manifest.json           ← PWA manifest
-        └── icons/                  ← PWA icons (various sizes)
+        ├── manifest.json
+        └── icons/
+```
+
+---
+
+## Claude Auth Flow (OAuth Setup Page)
+
+The `container/docker-exec-wrapper.sh` sets `pathToClaudeCodeExecutable` so the SDK's subprocess
+runs inside Docker. Separately, Claude credentials are managed by the VPS:
+
+### Phase 1 implementation (reliable fallback): Token paste
+
+```
+Setup wizard step 2:
+
+  "Authenticate with Claude"
+
+  1. Click "Open Claude in browser" →
+     opens https://claude.ai/oauth/authorize?client_id=9d1c250a-...&...
+
+  2. Complete login in browser
+
+  3. In a terminal on your local machine, run:
+       claude setup-token
+     Copy the token shown.
+
+  4. Paste token here: [________________]
+     [ Save ]
+```
+
+The VPS stores it as `CLAUDE_CODE_OAUTH_TOKEN` in the config table (encrypted).
+
+### Phase 2 (future): Full polling-based browser OAuth
+
+Once the CLI's state-polling mechanism is confirmed (by inspecting CLI network traffic), the
+wizard can be fully browser-driven with no copy-paste step. The VPS will:
+1. Generate PKCE params + state, return OAuth URL to browser
+2. User completes OAuth in browser (redirect goes to console.anthropic.com)
+3. VPS polls `https://console.anthropic.com/api/oauth/pending?state=<state>` (or equivalent)
+   until it receives the authorization code
+4. VPS exchanges code + code_verifier for access + refresh tokens
+5. Store credentials, proceed to next setup step
+
+---
+
+## Docker Container Bridge
+
+`container/docker-exec-wrapper.sh`:
+```bash
+#!/bin/bash
+# Called by @anthropic-ai/claude-agent-sdk as the Claude Code executable.
+# Forwards all arguments and stdin/stdout to the workspace container.
+exec docker exec -i claude-workspace claude "$@"
+```
+
+Session manager sets:
+```typescript
+import { query } from "@anthropic-ai/claude-agent-sdk";
+
+for await (const msg of query({
+  prompt: userMessage,
+  options: {
+    pathToClaudeCodeExecutable: "/opt/obsidian-claude-code/docker-exec-wrapper.sh",
+    cwd: "/vault",
+    env: {
+      CLAUDE_CODE_OAUTH_TOKEN: storedOAuthToken,
+    },
+    permissionMode: "default",   // triggers canUseTool for sensitive operations
+    canUseTool: async (tool, input) => {
+      // suspend and send permission_request over WebSocket
+      // await user approve/deny on phone
+      return awaitPermissionFromWebSocket(tool, input);
+    },
+  }
+})) {
+  // forward msg to WebSocket client
+}
 ```
 
 ---
 
 ## WebSocket Protocol
 
-All messages are JSON. Two directions: **server→client** and **client→server**.
+All messages are JSON. Connection requires `Authorization: Bearer <session-token>` header or
+`?token=` query param (the session token from the login cookie).
 
 ### Server → Client
 
 ```ts
-// Streamed text from Claude
-{ type: 'text', content: string }
-
-// A tool Claude Code is invoking
-{ type: 'tool_start', tool: string, input: Record<string, unknown> }
-
-// Tool finished
-{ type: 'tool_end', tool: string, output: string }
-
-// Claude Code wants to run something — must be approved
+{ type: 'text',              content: string }
+{ type: 'tool_start',        tool: string, input: Record<string, unknown> }
+{ type: 'tool_end',          tool: string, output: string }
 { type: 'permission_request', id: string, tool: string, command: string, description: string }
-
-// A file diff to display
-{ type: 'diff', file: string, patch: string }
-
-// Session state changes
-{ type: 'session_state', state: 'idle' | 'running' | 'waiting_permission' | 'error' }
-
-// Error
-{ type: 'error', message: string }
+{ type: 'diff',              file: string, patch: string }
+{ type: 'session_state',     state: 'idle' | 'running' | 'waiting_permission' | 'error' | 'done' }
+{ type: 'cost',              total_usd: number }
+{ type: 'error',             message: string }
 ```
 
 ### Client → Server
 
 ```ts
-// User message or /command
-{ type: 'message', content: string }
-
-// Response to a permission_request
+{ type: 'message',             content: string }
 { type: 'permission_response', id: string, allow: boolean }
-
-// Interrupt current run (Ctrl+C equivalent)
 { type: 'interrupt' }
 ```
 
 ---
 
-## User States & Auth Flow
-
-```
-[new google sign-in]
-        │
-        ▼
-   status: pending
-   (cannot start sessions)
-        │
-        ▼ (admin approves in admin panel)
-   status: approved
-   (prompted to link Claude.ai account)
-        │
-        ▼ (Claude.ai OAuth complete)
-   status: active
-   (can start sessions)
-
-Admin account: seeded by deploy script with google_email + role: 'admin'
-Admin goes through the same flow but starts at approved.
-```
-
----
-
-## Database Schema (Drizzle)
+## Database Schema (Drizzle + SQLite)
 
 ```ts
-users {
-  id          text primary key  // uuid
-  google_id   text unique
-  email       text
-  name        text
-  role        text  // 'user' | 'admin'
-  status      text  // 'pending' | 'approved' | 'active' | 'suspended'
-  created_at  integer
+// Key-value config store
+config {
+  key    text primary key   // e.g. 'password_hash', 'oauth_token', 'vault_path'
+  value  text               // encrypted for sensitive keys
 }
 
-claude_credentials {
-  user_id         text  // fk → users.id
-  access_token    text  // encrypted
-  refresh_token   text  // encrypted
-  expires_at      integer
-}
-
+// Session history
 sessions {
-  id            text primary key
-  user_id       text  // fk → users.id
-  container_id  text
-  started_at    integer
-  ended_at      integer
-  status        text  // 'running' | 'stopped' | 'error'
-}
-
-git_repos {
-  user_id     text  // fk → users.id
-  repo_path   text  // /var/vaults/<user_id>.git
-  remote_url  text  // the URL the phone pushes to
+  id           text primary key   // uuid
+  started_at   integer
+  ended_at     integer
+  status       text    // 'running' | 'stopped' | 'error'
+  turn_count   integer
+  cost_usd     real
 }
 ```
 
+That's the entire schema. No users table. No per-user anything.
+
 ---
 
-## User Container (Dockerfile)
+## Workspace Container (Dockerfile)
 
 ```dockerfile
 FROM ubuntu:24.04
@@ -343,130 +401,165 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 # Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
-# Non-root user for sessions
+# Non-root user
 RUN useradd -m -s /bin/bash claude
 USER claude
 WORKDIR /home/claude
 
-# Vault mounted here at runtime
-VOLUME /home/claude/vault
+VOLUME /vault
 ```
 
-Resource limits applied at `docker run` time:
-- `--memory=512m`
-- `--cpus=0.5`
-- `--pids-limit=100`
-- `--network=claude-net` (custom bridge, no host access)
+Container is started once and kept alive across sessions (no startup latency):
+```
+docker run -d \
+  --name claude-workspace \
+  --memory=1g \
+  --cpus=1.0 \
+  --pids-limit=200 \
+  --network=claude-net \
+  -v /var/vault:/vault \
+  claude-workspace-image
+```
 
 ---
 
-## Docker Compose Structure
+## Docker Compose
 
-### `docker-compose.dev.yml`
-- SvelteKit dev server (port 3000)
-- No Caddy (direct access)
-- SQLite at `./data/dev.db`
-- Vaults at `./data/dev-vaults/`
+Single `docker-compose.yml` with a `DEV=true` env flag to toggle dev vs prod settings:
 
-### `docker-compose.prod.yml`
-- SvelteKit built (port 3001)
-- Caddy on 80/443
-- SQLite at `/var/data/prod.db`
-- Vaults at `/var/vaults/`
+```yaml
+services:
+  app:
+    build: ./app
+    volumes:
+      - ./data:/data          # SQLite
+      - /var/run/docker.sock:/var/run/docker.sock  # to manage workspace container
+      - ./container/docker-exec-wrapper.sh:/usr/local/bin/docker-exec-wrapper.sh
+    environment:
+      - DATABASE_URL=/data/app.db
+      - VAULTS_DIR=/var/vault
+    ports:
+      - "3000:3000"
+
+  caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+    ports:
+      - "80:80"
+      - "443:443"
+```
 
 ---
 
-## Deploy Script (`scripts/seed-admin.ts`)
+## Setup Wizard Flow
 
 ```
-Usage: npx tsx scripts/seed-admin.ts --email user@gmail.com
+First visit (not set up):
+  /setup
+    Step 1: Choose password
+            [password] [confirm] → POST /api/setup/password
+    Step 2: Authenticate with Claude
+            Two options:
+            a) [Open Claude OAuth] → opens claude.ai OAuth in new tab
+               wait for completion (polling) → show ✓ when done
+            b) "Or paste a token from 'claude setup-token'"
+               [token input] → POST /api/setup/claude/token
+    Step 3: Configure vault
+            Git remote URL the Obsidian app should push to:
+            [  https://your-vps.com/vault.git  ]  (auto-filled, read-only)
+            [Done]
+  → redirect to /
+
+Subsequent visits:
+  /login
+    [password] → 30-day session cookie → redirect to /
 ```
 
-- Inserts a user row with the given Google email, role=admin, status=approved
-- On next Google sign-in with that email, they get an admin session immediately
-- They still go through Claude.ai OAuth link on first use
+---
+
+## Key Env Vars (`.env.example`)
+
+```
+# Required
+APP_SECRET=           # random 32+ char string for signing cookies
+ENCRYPTION_KEY=       # random 32-byte hex for encrypting tokens at rest
+DATABASE_URL=/data/app.db
+
+# Domain (used by Caddy + OAuth callback)
+PUBLIC_URL=https://your-vps.example.com
+
+# Vault
+VAULTS_DIR=/var/vault
+
+# Optional overrides
+PORT=3000
+NODE_ENV=production
+```
+
+No Google credentials, no Claude OAuth client ID/secret (we use the CLI's public client).
 
 ---
 
 ## Implementation Phases
 
 ### Phase 1 — Foundation
-1. SvelteKit app scaffolding with Tailwind, PWA manifest, iOS meta tags
-2. Drizzle schema + SQLite setup
-3. Google OAuth login flow (callback, session cookie)
-4. Middleware: route guards (pending users see only a waiting screen)
-5. Deploy script: seed admin user
-6. Docker Compose (dev)
+1. SvelteKit app scaffold: Tailwind, PWA manifest, iOS meta tags
+2. Drizzle schema (config + sessions tables) + SQLite setup
+3. Local password auth: bcrypt, session cookie, route guard
+4. Setup wizard: password step only (Claude auth stubbed)
+5. `/` renders a placeholder chat UI (not yet functional)
+6. `docker-compose.yml` dev setup
 
-### Phase 2 — Admin Panel
-1. User list page (mobile card layout)
-2. Approve/suspend user action
-3. Basic session monitor (who is running, started when)
+### Phase 2 — Claude Auth
+1. `claude/oauth.ts`: PKCE generation, OAuth URL construction
+2. Setup wizard Claude auth step (token-paste path first)
+3. Token storage (encrypted in config table)
+4. Token refresh logic (access token expires in 8h, refresh token long-lived)
+5. Settings page: show auth status, "re-authenticate" button
 
-### Phase 3 — Claude.ai OAuth Link
-1. OAuth flow for linking Claude.ai account
-2. Encrypt and store tokens in `claude_credentials`
-3. Token refresh logic
-4. Settings page showing link status
+### Phase 3 — Container + Session Manager
+1. Workspace container Dockerfile
+2. `docker-exec-wrapper.sh`
+3. `docker.ts`: start/stop/exec container lifecycle
+4. `session-manager.ts`: `query()` integration, `canUseTool` WebSocket bridge
+5. WebSocket server (`/api/ws`): auth check, message routing
 
-### Phase 4 — Container + Session Manager
-1. User container Dockerfile
-2. `session-manager.ts`: spawn container, set up vault mount, inject Claude creds
-3. WebSocket server: upgrade, route to session, bridge events
-4. Container lifecycle: idle timeout, cleanup
-
-### Phase 5 — Chat UI
-1. Basic message list (streaming text)
-2. Tool call cards
-3. Permission prompt (approve/deny dialog)
+### Phase 4 — Chat UI
+1. Message list with streaming text
+2. Tool call cards (collapsible, shows tool name + input)
+3. Permission prompt (bottom sheet, approve/deny)
 4. Diff viewer (mobile unified diff)
-5. `/command` input support
-6. Session state indicator
+5. `/command` slash input
+6. Session state indicator + cost display
 
-### Phase 6 — Vault / Git
-1. Bare repo creation per user on VPS
-2. Git over HTTPS or SSH for phone sync
-3. Container mounts user vault at session start
-4. Settings page: configure remote URL / view push instructions
+### Phase 5 — Vault / Git
+1. Git bare repo at `/var/vault`
+2. Git HTTP backend via Caddy (or SSH — TBD based on Obsidian Git plugin support)
+3. Container vault mount at session start
+4. Settings page: show the push URL, copy button
+
+### Phase 6 — OAuth Polling (Phase 2 upgrade)
+1. Reverse-engineer CLI polling mechanism (network inspection of `claude auth` run)
+2. Implement `setup/claude/start` + `setup/claude/poll` server routes
+3. Add fully browser-based auth path to setup wizard (no terminal step)
 
 ### Phase 7 — Production Hardening
-1. `docker-compose.prod.yml` + Caddy config
-2. Resource limits on containers
-3. Network isolation
-4. Secrets management (env vars, encryption key)
-5. Basic monitoring page (admin only, mobile)
-
----
-
-## Key Env Vars
-
-```
-# Google OAuth
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=
-
-# Claude.ai OAuth
-CLAUDE_OAUTH_CLIENT_ID=
-CLAUDE_OAUTH_REDIRECT_URI=
-
-# App
-SESSION_SECRET=          # for signing session cookies
-ENCRYPTION_KEY=          # for encrypting Claude tokens at rest
-DATABASE_URL=            # path to SQLite file
-VAULTS_DIR=              # directory for bare git repos
-
-# Admin
-ADMIN_EMAIL=             # used by seed script (can also pass as CLI arg)
-```
+1. `docker-compose.yml` prod target
+2. Caddy config with HTTPS
+3. Container resource limits (memory, CPU, PIDs)
+4. Network isolation (`claude-net` bridge, no host access)
+5. Log rotation, startup script / systemd unit
 
 ---
 
 ## Decisions Still Open
 
-- **Git auth for phone sync**: HTTPS (simpler, Caddy can proxy) vs SSH (more standard for
-  Obsidian Git plugin). Recommend HTTPS with per-user tokens to start.
-- **Claude.ai OAuth client ID**: Need to obtain this from Anthropic (or confirm the SDK
-  handles the auth flow internally — the Claude Code CLI does this via a built-in browser
-  redirect; need to verify if this can be replicated server-side for per-user credential
-  storage).
+- **Git auth for vault sync**: HTTPS (basic auth via Caddy, simpler) vs SSH (better Obsidian Git
+  plugin support). Lean HTTPS first, add SSH if needed.
+- **Container lifecycle**: Keep workspace container running 24/7 vs start/stop per session.
+  24/7 is simpler (no startup latency, vault always mounted). Start with always-on.
+- **OAuth polling endpoint**: Needs to be confirmed by inspecting CLI network traffic before
+  Phase 6. If no clean polling API exists, the token-paste flow (Phase 2) is the permanent UX.
+- **Multiple concurrent sessions**: Out of scope for now. Single active session at a time.
+  Session interrupts the previous one if another is started.
