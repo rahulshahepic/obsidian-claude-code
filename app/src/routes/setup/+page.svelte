@@ -277,4 +277,10 @@
 			<p class="mt-4 rounded-xl bg-rose-950 px-4 py-3 text-sm text-rose-300">{error}</p>
 		{/if}
 	</div>
+
+	<form method="POST" action="/api/auth/signout" class="mt-8 text-center">
+		<button type="submit" class="text-xs text-slate-600 hover:text-slate-400 transition">
+			Sign out
+		</button>
+	</form>
 </div>
