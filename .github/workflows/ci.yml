@@ -83,3 +83,23 @@ jobs:
           name: playwright-report
           path: app/playwright-report/
           retention-days: 14
+
+  deploy:
+    name: Deploy to VPS
+    needs: [test, playwright]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+
+    steps:
+      - name: Deploy via SSH
+        if: env.VPS_HOST != ''
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ~/obsidian-claude-code
+            bash scripts/deploy.sh
