@@ -114,8 +114,8 @@ const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 export async function exchangeCode(code: string, codeVerifier: string): Promise<OAuthTokens> {
 	const res = await fetch(TOKEN_ENDPOINT, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams({
 			grant_type: 'authorization_code',
 			code,
 			code_verifier: codeVerifier,
@@ -147,8 +147,8 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
 export async function refreshAccessToken(refreshToken: string): Promise<OAuthTokens> {
 	const res = await fetch(TOKEN_ENDPOINT, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams({
 			grant_type: 'refresh_token',
 			refresh_token: refreshToken,
 			client_id: CLIENT_ID
