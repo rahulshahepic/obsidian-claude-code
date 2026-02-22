@@ -10,8 +10,6 @@ import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
  *   claude_oauth_token      encrypted — CLAUDE_CODE_OAUTH_TOKEN
  *   claude_refresh_token    encrypted — used to get new access tokens
  *   claude_token_expires_at ISO timestamp string
- *   vault_path              absolute path to the vault directory on host
- *   vault_git_remote        remote URL shown to Obsidian Git plugin
  */
 export const config = sqliteTable('config', {
 	key: text('key').primaryKey(),

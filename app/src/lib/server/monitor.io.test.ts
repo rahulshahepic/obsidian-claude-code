@@ -47,7 +47,6 @@ const PROC_STAT_LINE = 'cpu  100 20 30 800 10 0 5 0 0 0\n';
 const PROC_MEMINFO = 'MemTotal: 16384000 kB\nMemAvailable: 8192000 kB\n';
 const DF_LINE = '/dev/sda1  107374182400  53687091200  53687091200  50% /\n';
 const CONTAINER_RUNNING = `running ${new Date(Date.now() - 3_600_000).toISOString()}`;
-const GIT_TIMESTAMP = '2024-01-01T10:00:00+00:00\n';
 
 function setupHealthyMocks() {
 	mockReadFileSync.mockImplementation((path: string) => {
@@ -59,14 +58,12 @@ function setupHealthyMocks() {
 	mockExecSync.mockImplementation((cmd: string) => {
 		if (cmd.includes('docker inspect')) return CONTAINER_RUNNING;
 		if (cmd.includes('df')) return DF_LINE;
-		if (cmd.includes('git')) return GIT_TIMESTAMP;
 		throw new Error(`Unexpected execSync: ${cmd}`);
 	});
 
 	mockGetConfig.mockImplementation((key: string) => {
 		if (key === 'setup_complete') return 'true';
 		if (key === 'claude_token_expires_at') return FUTURE;
-		if (key === 'vault_path') return '/var/vault';
 		return null;
 	});
 
@@ -91,7 +88,6 @@ describe('getHealthSnapshot', () => {
 		expect(snap.containerStatus).toBe('running');
 		expect(snap.claudeTokenValid).toBe(true);
 		expect(snap.claudeTokenExpiresInSeconds).toBeGreaterThan(7000);
-		expect(snap.vaultLastPush).toBe(GIT_TIMESTAMP.trim());
 		expect(snap.version).toBe('0.1.0');
 		expect(snap.uptimeSeconds).toBeGreaterThanOrEqual(0);
 	});
@@ -100,7 +96,6 @@ describe('getHealthSnapshot', () => {
 		mockGetConfig.mockImplementation((key: string) => {
 			if (key === 'setup_complete') return null;
 			if (key === 'claude_token_expires_at') return FUTURE;
-			if (key === 'vault_path') return '/var/vault';
 			return null;
 		});
 		const snap = await getHealthSnapshot();
@@ -112,7 +107,6 @@ describe('getHealthSnapshot', () => {
 		mockExecSync.mockImplementation((cmd: string) => {
 			if (cmd.includes('docker inspect')) throw new Error('No such container');
 			if (cmd.includes('df')) return DF_LINE;
-			if (cmd.includes('git')) return GIT_TIMESTAMP;
 			return '';
 		});
 		const snap = await getHealthSnapshot();
@@ -124,7 +118,6 @@ describe('getHealthSnapshot', () => {
 		mockExecSync.mockImplementation((cmd: string) => {
 			if (cmd.includes('docker inspect')) return 'exited 2024-01-01T00:00:00Z';
 			if (cmd.includes('df')) return DF_LINE;
-			if (cmd.includes('git')) return GIT_TIMESTAMP;
 			return '';
 		});
 		const snap = await getHealthSnapshot();
@@ -136,7 +129,6 @@ describe('getHealthSnapshot', () => {
 		mockGetConfig.mockImplementation((key: string) => {
 			if (key === 'setup_complete') return 'true';
 			if (key === 'claude_token_expires_at') return PAST;
-			if (key === 'vault_path') return '/var/vault';
 			return null;
 		});
 		const snap = await getHealthSnapshot();
@@ -149,7 +141,6 @@ describe('getHealthSnapshot', () => {
 		mockGetConfig.mockImplementation((key: string) => {
 			if (key === 'setup_complete') return 'true';
 			if (key === 'claude_token_expires_at') return null;
-			if (key === 'vault_path') return '/var/vault';
 			return null;
 		});
 		const snap = await getHealthSnapshot();
@@ -157,27 +148,6 @@ describe('getHealthSnapshot', () => {
 		expect(snap.claudeTokenValid).toBe(false);
 	});
 
-	it('returns null vaultLastPush when no vault is configured', async () => {
-		mockGetConfig.mockImplementation((key: string) => {
-			if (key === 'setup_complete') return 'true';
-			if (key === 'claude_token_expires_at') return FUTURE;
-			if (key === 'vault_path') return null;
-			return null;
-		});
-		const snap = await getHealthSnapshot();
-		expect(snap.vaultLastPush).toBeNull();
-	});
-
-	it('returns null vaultLastPush when git log fails', async () => {
-		mockExecSync.mockImplementation((cmd: string) => {
-			if (cmd.includes('docker inspect')) return CONTAINER_RUNNING;
-			if (cmd.includes('df')) return DF_LINE;
-			if (cmd.includes('git')) throw new Error('not a git repo');
-			return '';
-		});
-		const snap = await getHealthSnapshot();
-		expect(snap.vaultLastPush).toBeNull();
-	});
 });
 
 // ---------------------------------------------------------------------------
@@ -185,7 +155,7 @@ describe('getHealthSnapshot', () => {
 // ---------------------------------------------------------------------------
 
 describe('getMonitorSnapshot', () => {
-	it('includes all fields from health + system + usage + vault', async () => {
+	it('includes all fields from health + system + usage', async () => {
 		const snap = await getMonitorSnapshot();
 
 		// inherits from health
@@ -211,10 +181,6 @@ describe('getMonitorSnapshot', () => {
 		expect(snap.usage.totalCostUsd).toBe(25.5);
 		expect(snap.usage.last30DaysSessions).toBe(3);
 		expect(snap.usage.last30DaysCostUsd).toBe(8.75);
-
-		// vault
-		expect(snap.vault.path).toBe('/var/vault');
-		expect(snap.vault.lastPushAt).toBe(GIT_TIMESTAMP.trim());
 	});
 
 	it('handles null DB results gracefully', async () => {
@@ -229,7 +195,6 @@ describe('getMonitorSnapshot', () => {
 		mockExecSync.mockImplementation((cmd: string) => {
 			if (cmd.includes('df')) throw new Error('df failed');
 			if (cmd.includes('docker inspect')) return CONTAINER_RUNNING;
-			if (cmd.includes('git')) return GIT_TIMESTAMP;
 			return '';
 		});
 		const snap = await getMonitorSnapshot();

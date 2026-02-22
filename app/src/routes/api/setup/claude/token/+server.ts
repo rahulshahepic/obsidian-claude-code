@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { storeTokens } from '$lib/server/claude/oauth.js';
+import { setConfig } from '$lib/server/db/index.js';
 
 /**
  * Save a Claude OAuth token obtained via `claude setup-token`.
@@ -19,6 +20,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
 		refreshedAt: now.toISOString()
 	});
+	setConfig('setup_complete', 'true');
 
 	return json({ ok: true });
 };

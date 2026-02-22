@@ -1,8 +1,8 @@
 /**
  * Docker workspace container lifecycle helpers.
  *
- * The workspace container runs the Claude Code CLI and has the vault
- * bind-mounted at /vault. It is started once and kept alive across sessions.
+ * The workspace container runs the Claude Code CLI.
+ * It is started once and kept alive across sessions.
  *
  * Pure helpers (parseInspectStatus) are exported for unit testing.
  * IO-bound functions use execSync so they can be mocked in tests.
@@ -11,7 +11,6 @@ import { execSync } from 'child_process';
 
 export const CONTAINER_NAME = process.env.CLAUDE_WORKSPACE_CONTAINER ?? 'claude-workspace';
 export const IMAGE_NAME = process.env.CLAUDE_WORKSPACE_IMAGE ?? 'claude-workspace';
-const VAULTS_DIR = process.env.VAULTS_DIR ?? '/var/vault';
 
 // ---------------------------------------------------------------------------
 // Pure helpers (exported for unit testing)
@@ -67,7 +66,6 @@ export function ensureContainerRunning(): void {
 			'--memory=1g',
 			'--cpus=1.0',
 			'--pids-limit=200',
-			`-v ${VAULTS_DIR}:/vault`,
 			IMAGE_NAME
 		].join(' '),
 		{ timeout: 60_000 }

@@ -1,8 +1,10 @@
-# obsidian-claude-code
+# claude-code-web
 
-A self-hosted web app (PWA) that runs [Claude Code](https://github.com/anthropics/claude-code) in your mobile browser, with your Obsidian vault synced via Git. You deploy it on your own VPS. No accounts, no multi-tenancy — just you and your server.
+A self-hosted web app (PWA) that lets you run [Claude Code](https://github.com/anthropics/claude-code) from any browser — including your phone. You deploy it on your own VPS. No accounts, no multi-tenancy — just you and your server.
 
-**What it does:** You open a chat on your phone, talk to Claude Code, it reads and edits your vault, and the Obsidian app syncs changes automatically via the Obsidian Git plugin.
+**What it does:** You open a chat in your browser, talk to Claude Code, and it executes tasks inside a sandboxed Docker container on your server — reading and editing files, running commands, and writing code. Works as a PWA on iOS/Android so it feels like a native app.
+
+**What it requires:** A Claude Pro or Max subscription. Authentication is done via your Claude account's OAuth — no API keys needed.
 
 ---
 
@@ -10,15 +12,12 @@ A self-hosted web app (PWA) that runs [Claude Code](https://github.com/anthropic
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  Phone                                                   │
-│  ┌──────────────┐   ┌────────────────────────────────┐  │
-│  │ Obsidian App │   │ Chrome/Safari (installed PWA)  │  │
-│  │ + Git plugin │   │  Chat UI                       │  │
-│  │              │   │  Settings / Monitor            │  │
-│  └──────┬───────┘   └──────────────┬─────────────────┘  │
-└─────────┼──────────────────────────┼────────────────────┘
-          │ git push/pull (SSH)      │ WebSocket + HTTPS
-          ▼                          ▼
+│  Browser (desktop or mobile)                             │
+│  Chrome / Safari / installed PWA                         │
+│  Chat UI · Settings · Monitor                            │
+└──────────────────────┬───────────────────────────────────┘
+                       │ WebSocket + HTTPS
+                       ▼
 ┌──────────────────────────────────────────────────────────┐
 │  Your VPS (Ubuntu 24.04)                                 │
 │                                                          │
@@ -31,19 +30,16 @@ A self-hosted web app (PWA) that runs [Claude Code](https://github.com/anthropic
 │          Session Manager (in-process Node.js)            │
 │            ┌ calls @anthropic-ai/claude-agent-sdk        │
 │            ├ pathToClaudeCodeExecutable → docker-exec.sh │
-│            ├ canUseTool → WS permission round-trip        │
+│            ├ canUseTool → WS permission round-trip       │
 │            └ streams SDK messages → WebSocket clients    │
 │                        │ docker exec -i                  │
 │          Workspace Container (Docker)                    │
-│            ubuntu:24.04, Node LTS, Claude CLI, uv        │
-│            /vault  ← bind-mounted from host              │
+│            ubuntu:24.04, Node LTS, Claude CLI            │
 │            memory: 1 GB  cpus: 1.0  pids: 200            │
 │                                                          │
 │  SQLite  ./data/app.db                                   │
-│    config: encrypted tokens, vault path, OAuth state     │
+│    config: encrypted tokens, OAuth state                 │
 │    sessions: history, cost, turn counts                  │
-│                                                          │
-│  /var/vault/  ← git bare repo (Obsidian pushes here)     │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -53,11 +49,9 @@ A self-hosted web app (PWA) that runs [Claude Code](https://github.com/anthropic
 
 **Google OAuth for browser login.** Only the email in `ALLOWED_EMAIL` can sign in. After the OAuth callback verifies the email, a 30-day HMAC-signed session cookie is issued. No passwords, no passkeys.
 
-**Claude account via OAuth.** During setup you sign in with your own Claude account (via the same PKCE flow the Claude CLI uses). Your subscription runs on your server — no third party is involved and there is no ToS issue.
+**Claude account via OAuth (not an API key).** During setup you sign in with your own Claude account using the same PKCE flow the Claude CLI uses. This means you use your Claude Pro or Max subscription — not pay-per-token API billing. Your credentials are encrypted and stored locally on your server.
 
 **Docker isolation.** The Claude Code CLI runs inside a persistent workspace container. The host-side SDK bridges to it via `docker exec -i`. This keeps Bash tool execution sandboxed away from the host OS.
-
-**SSH vault sync.** Obsidian Git connects over SSH. You paste the Obsidian-generated SSH public key in Settings; the app writes it to `~/.ssh/authorized_keys` in a managed marker block. The vault remote URL is `ssh://user@host/path`.
 
 **WebSocket chat.** One persistent WS connection per browser tab. The session manager broadcasts to all connected clients (useful if you have the chat open on phone and laptop simultaneously). Permission prompts pause the SDK and wait for an approve/deny from any connected client.
 
@@ -75,7 +69,114 @@ A self-hosted web app (PWA) that runs [Claude Code](https://github.com/anthropic
 | Tool isolation | Docker workspace container |
 | Database | SQLite via Drizzle ORM |
 | Reverse proxy | Caddy (auto-HTTPS) |
-| Vault sync | Git bare repo + SSH |
+
+---
+
+## VPS setup
+
+### Prerequisites
+
+- Ubuntu 24.04 VPS (1 GB RAM minimum, 2 GB recommended)
+- Docker + Docker Compose installed
+- A domain with an A record pointing to the VPS
+- A Google Cloud project with an OAuth 2.0 web client
+- A Claude Pro or Max subscription
+
+### 1. Google OAuth client
+
+1. Go to [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials)
+2. Create an **OAuth 2.0 Client ID** → Application type: **Web application**
+3. Add an authorized redirect URI:
+   ```
+   https://YOUR_DOMAIN/api/auth/callback
+   ```
+4. Copy the **Client ID** and **Client Secret**
+
+### 2. First-time server setup
+
+SSH into the VPS, clone the repo, and run the setup script:
+
+```bash
+git clone https://github.com/YOUR_USER/claude-code-web.git ~/claude-code-web
+cd ~/claude-code-web
+bash scripts/setup.sh
+```
+
+The script prompts for your domain, Google OAuth credentials, and your email address, then generates a `.env` with those values plus random secrets for session signing and encryption.
+
+Start everything:
+
+```bash
+docker compose up -d --build
+```
+
+### 3. First-time app setup (in your browser)
+
+Open `https://YOUR_DOMAIN`. You'll be directed to a one-step setup wizard:
+
+**Authenticate with Claude** — click "Sign in with Claude →", complete the OAuth flow in your browser, then paste the authorization code shown on Anthropic's callback page back into the wizard. Alternatively, use the "Paste token" tab: run `claude setup-token` on a machine where you're already logged into Claude Code and paste the result.
+
+After authenticating, you'll land on the chat page and Claude Code is ready to use.
+
+---
+
+## User guide
+
+### Starting a conversation
+
+Type your request in the chat box and press Send (or Enter on desktop). Claude Code will start working immediately — you'll see its responses stream in, along with any tools it uses.
+
+**Example prompts:**
+- "List the files in the current directory"
+- "Write a Python script that fetches the current weather for a given city"
+- "Find all TODO comments in the project and summarise them"
+
+### Tool calls and permission prompts
+
+Claude Code has access to tools like Bash, file read/write, and web search. For sensitive operations, it will pause and ask your permission before proceeding.
+
+When a permission prompt appears:
+- **Allow** — Claude proceeds with the tool call
+- **Deny** — Claude is told the action was denied and will try a different approach
+
+Unanswered permission prompts time out after 5 minutes (denied automatically).
+
+If you have the app open on multiple devices simultaneously (phone + laptop), the permission prompt appears on all of them — approving or denying from any one resolves it for all.
+
+### Interrupting a session
+
+Hit the **Stop** button (visible while a session is running) to interrupt Claude mid-task. Claude will stop at the next safe point. You can start a new request immediately after.
+
+### Sending follow-up messages
+
+After Claude responds, just type your next message. If the session is still running (Claude is working), your message is queued and delivered as the next turn. If the session has finished, a new session starts automatically.
+
+### Managing your Claude token
+
+Your Claude OAuth token expires periodically. When it does:
+- The chat will show an error when you try to start a session
+- The `/monitor` page will flag the token as expired
+- Go to **Settings** → "Update token →" and paste a fresh token from `claude setup-token`
+
+The token is refreshed automatically when possible. The Settings page shows the current expiry time.
+
+### Monitoring usage and cost
+
+The `/monitor` page (accessible from the nav) shows:
+- **System** — CPU, RAM, and disk usage on the host
+- **Container** — workspace container status and uptime
+- **Claude Auth** — token validity and time until expiry
+- **Usage** — session count and API cost for the last 30 days and all time
+
+> Note: if you're using a Claude Pro or Max subscription via OAuth, "API cost" reflects the compute used against your subscription, not direct billing. The numbers are still useful for understanding relative usage.
+
+### PWA installation
+
+On mobile, you can install the app to your home screen for a full-screen, app-like experience:
+- **iOS (Safari):** Share → Add to Home Screen
+- **Android (Chrome):** Menu → Add to Home screen, or tap the install prompt
+
+The PWA caches the app shell for fast loading and works offline (though Claude obviously requires an internet connection).
 
 ---
 
@@ -104,60 +205,6 @@ Coverage thresholds (enforced in CI): statements ≥ 80%, branches ≥ 75%, func
 
 ---
 
-## VPS setup
-
-### Prerequisites
-
-- Ubuntu 24.04 VPS (1 GB RAM minimum, 2 GB recommended)
-- Docker + Docker Compose installed
-- A domain with an A record pointing to the VPS
-- A Google Cloud project with an OAuth 2.0 web client
-
-### 1. Google OAuth client
-
-1. Go to [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials)
-2. Create an **OAuth 2.0 Client ID** → Application type: **Web application**
-3. Add an authorized redirect URI:
-   ```
-   https://YOUR_DOMAIN/api/auth/callback
-   ```
-4. Copy the **Client ID** and **Client Secret**
-
-### 2. First-time server setup
-
-SSH into the VPS, clone the repo, and run the setup script:
-
-```bash
-git clone https://github.com/YOUR_USER/obsidian-claude-code.git ~/obsidian-claude-code
-cd ~/obsidian-claude-code
-bash scripts/setup.sh
-```
-
-The script prompts for your domain, Google OAuth credentials, and your email address, then generates a `.env` with those values plus random secrets for session signing and encryption.
-
-Start everything:
-
-```bash
-docker compose up -d --build
-```
-
-### 3. First-time app setup (in your browser)
-
-Open `https://YOUR_DOMAIN`. You'll be directed through a two-step wizard:
-
-1. **Authenticate with Claude** — click "Sign in with Claude →", complete the OAuth flow in your browser, then paste the code shown on Anthropic's callback page back into the wizard.
-2. **Configure vault** — enter the path on the VPS where your vault should live (e.g. `/var/vault/my-vault`). The app initialises a git bare repo and shows you the SSH URL to add in Obsidian Git.
-
-### 4. Obsidian Git setup (on your phone)
-
-1. Install the **Obsidian Git** community plugin
-2. In plugin settings → **SSH** → paste in your SSH public key and copy it
-3. Back in the app's Settings page → **SSH key** → paste your public key and save
-4. Set the remote URL in Obsidian Git to the SSH URL shown in Settings (format: `ssh://user@host/var/vault/my-vault`)
-5. Commit and push from Obsidian to verify the connection
-
----
-
 ## CI/CD (GitHub Actions)
 
 Pushing to `main` triggers a deploy. Set these secrets in **Settings → Secrets and variables → Actions**:
@@ -179,7 +226,7 @@ If `VPS_HOST` is not set the deploy step is skipped (useful for forks or dev env
 
 ```bash
 ssh user@your-vps
-cd ~/obsidian-claude-code
+cd ~/claude-code-web
 bash scripts/deploy.sh
 ```
 
@@ -189,17 +236,15 @@ bash scripts/deploy.sh
 
 ### Claude usage
 
-Claude Code with Sonnet 4.5/4.6 via your own account:
+Claude Code using your Pro or Max subscription:
 
-| Usage pattern | Approximate cost |
+| Usage pattern | Approximate impact |
 |---|---|
-| Light (a few quick tasks/day) | $5–15 / month |
-| Moderate (30–60 min active use/day) | $20–60 / month |
-| Heavy (hours of active coding/day) | $60–200 / month |
+| Light (a few quick tasks/day) | Minimal — well within typical subscription limits |
+| Moderate (30–60 min active use/day) | May approach subscription limits on heavy tool-use tasks |
+| Heavy (hours of active coding/day) | Likely to hit limits; consider usage patterns |
 
-These are rough estimates — actual cost depends entirely on context window size and how many tool calls Claude makes per turn. The `/monitor` page shows your running 30-day total.
-
-> If you have a Claude Pro or Max subscription, you can use it directly without additional API billing. Billing depends on whether you authenticate via subscription OAuth or API key.
+Actual consumption depends on context window size and tool call frequency. The `/monitor` page tracks your 30-day session history and estimated cost.
 
 ### VPS
 
@@ -207,39 +252,10 @@ A 1 GB RAM VPS (Hetzner CX22, DigitalOcean Basic, Vultr) runs ~$4–7/month. The
 
 ---
 
-## Monitoring and health
-
-The `/monitor` page (login-gated) shows CPU, RAM, disk, container status, Claude token expiry, vault last push, and 30-day usage totals.
-
-The `/api/health` endpoint is unauthenticated — useful for external uptime monitors:
-
-```
-GET https://YOUR_DOMAIN/api/health
-```
-
-Returns `200 ok` when the container is running and the Claude token is valid, `503 degraded` otherwise.
-
----
-
-## Future: multiple users
-
-The app is intentionally single-user. Supporting multiple users would require:
-
-- **User table** in SQLite with per-user Claude credentials, vault paths, and session history
-- **Per-user Docker containers** (or per-session containers) to isolate file system access — currently all sessions share one workspace container and one vault mount
-- **Per-user SSH keys** in `authorized_keys` with separate vault remotes
-- **Multi-user login flow** — currently a single `ALLOWED_EMAIL` gates access; you'd replace this with a user table lookup after the Google OAuth callback
-- **Resource accounting** — cost and usage tracking per user rather than per instance
-- **Admin UI** — to add/remove users and view per-user usage
-
-None of this is architecturally blocked — the schema and auth layer are the main things to extend. The self-hosted single-user model is simpler for most people and avoids the multi-tenancy complexity entirely.
-
----
-
 ## Project structure
 
 ```
-obsidian-claude-code/
+claude-code-web/
 ├── .env.example
 ├── .github/workflows/ci.yml       vitest + coverage gate on every PR
 ├── docker-compose.yml             caddy + app + workspace services
@@ -248,7 +264,7 @@ obsidian-claude-code/
 │   ├── setup.sh                   interactive first-time VPS setup
 │   └── deploy.sh                  git pull → rebuild → restart
 ├── container/
-│   ├── Dockerfile                 ubuntu:24.04, Node LTS, Claude CLI, uv
+│   ├── Dockerfile                 ubuntu:24.04, Node LTS, Claude CLI
 │   └── docker-exec-wrapper.sh    pathToClaudeCodeExecutable bridge
 └── app/
     ├── src/
@@ -262,7 +278,6 @@ obsidian-claude-code/
     │   │   ├── session-manager.ts SDK loop, canUseTool bridge, WS broadcast
     │   │   ├── ws-handler.ts      per-connection message routing
     │   │   ├── ws-server.ts       HTTP upgrade + session auth
-    │   │   ├── git.ts             vault init, SSH URL, authorized_keys
     │   │   ├── db/                Drizzle schema + getConfig/setConfig
     │   │   ├── auth/              Google OAuth + HMAC session cookie
     │   │   └── claude/            PKCE, token refresh, encrypted storage
@@ -270,3 +285,17 @@ obsidian-claude-code/
     │   └── routes/                SvelteKit pages + API handlers
     └── e2e/                       Playwright tests
 ```
+
+---
+
+## Future: multiple users
+
+The app is intentionally single-user. Supporting multiple users would require:
+
+- **User table** in SQLite with per-user Claude credentials and session history
+- **Per-user Docker containers** (or per-session containers) to isolate file system access — currently all sessions share one workspace container
+- **Multi-user login flow** — currently a single `ALLOWED_EMAIL` gates access; you'd replace this with a user table lookup after the Google OAuth callback
+- **Resource accounting** — cost and usage tracking per user rather than per instance
+- **Admin UI** — to add/remove users and view per-user usage
+
+None of this is architecturally blocked — the schema and auth layer are the main things to extend.

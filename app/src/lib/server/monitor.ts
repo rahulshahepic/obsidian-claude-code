@@ -56,11 +56,6 @@ export interface UsageStats {
 	last30DaysCostUsd: number;
 }
 
-export interface VaultStats {
-	lastPushAt: string | null;
-	path: string | null;
-}
-
 // ---------------------------------------------------------------------------
 // Pure parsers (exported for unit testing)
 // ---------------------------------------------------------------------------
@@ -202,22 +197,6 @@ function getUsageStats(): UsageStats {
 	};
 }
 
-function getVaultStats(): VaultStats {
-	const vaultPath = getConfig('vault_path');
-	if (!vaultPath) return { lastPushAt: null, path: null };
-	let lastPushAt: string | null = null;
-	try {
-		const ts = execSync(`git -C "${vaultPath}" log -1 --format=%cI 2>/dev/null`, {
-			encoding: 'utf8',
-			timeout: 2000
-		}).trim();
-		if (ts) lastPushAt = ts;
-	} catch {
-		// git not initialised or no commits yet
-	}
-	return { lastPushAt, path: vaultPath };
-}
-
 // ---------------------------------------------------------------------------
 // Public snapshots
 // ---------------------------------------------------------------------------
@@ -229,7 +208,6 @@ export interface HealthSnapshot {
 	containerStatus: ContainerStatus['status'];
 	claudeTokenValid: boolean;
 	claudeTokenExpiresInSeconds?: number;
-	vaultLastPush: string | null;
 	version: string;
 	/** Last error message only — safe for the public health endpoint. */
 	lastError: { ts: number; message: string } | null;
@@ -238,7 +216,6 @@ export interface HealthSnapshot {
 export async function getHealthSnapshot(): Promise<HealthSnapshot> {
 	const container = getContainerStatus();
 	const token = getTokenStatus();
-	const vault = getVaultStats();
 	const setupComplete = getConfig('setup_complete') === 'true';
 	const degraded = !setupComplete || container.status !== 'running' || !token.valid;
 	const last = getLastError();
@@ -250,7 +227,6 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
 		containerStatus: container.status,
 		claudeTokenValid: token.valid,
 		claudeTokenExpiresInSeconds: token.expiresInSeconds,
-		vaultLastPush: vault.lastPushAt,
 		version: '0.1.0',
 		lastError: last ? { ts: last.ts, message: last.message } : null
 	};
@@ -262,7 +238,6 @@ export interface MonitorSnapshot extends HealthSnapshot {
 	disk: DiskStats;
 	container: ContainerStatus;
 	usage: UsageStats;
-	vault: VaultStats;
 	/** Full error history with stack traces — only served to authenticated users. */
 	errors: ErrorEntry[];
 }
@@ -276,7 +251,6 @@ export async function getMonitorSnapshot(): Promise<MonitorSnapshot> {
 		disk: getDiskStats(),
 		container: getContainerStatus(),
 		usage: getUsageStats(),
-		vault: getVaultStats(),
 		errors: getErrors()
 	};
 }

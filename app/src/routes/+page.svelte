@@ -259,7 +259,6 @@
 			<div class="flex flex-col items-center justify-center h-full px-6 text-center gap-3 mt-8">
 				<div class="text-4xl">◆</div>
 				<p class="text-slate-400 text-sm">What would you like to work on?</p>
-				<p class="text-slate-600 text-xs">Your Obsidian vault is available for reading and editing.</p>
 			</div>
 		{/if}
 

@@ -164,7 +164,6 @@ export class SessionManager {
 	 */
 	async startSession(
 		oauthToken: string,
-		vaultPath: string,
 		wrapperPath: string
 	): Promise<string> {
 		if (this.state !== 'idle' && this.state !== 'done' && this.state !== 'error') {
@@ -184,7 +183,7 @@ export class SessionManager {
 		this.setState('running');
 
 		// Start the SDK query in the background — it drives the async loop.
-		this._runSdkLoop(sessionId, oauthToken, vaultPath, wrapperPath).catch((err: unknown) => {
+		this._runSdkLoop(sessionId, oauthToken, wrapperPath).catch((err: unknown) => {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.broadcast({ type: 'error', message: msg });
 			this._finaliseSession(sessionId, 'error');
@@ -203,7 +202,6 @@ export class SessionManager {
 	private async _runSdkLoop(
 		sessionId: string,
 		oauthToken: string,
-		vaultPath: string,
 		wrapperPath: string
 	): Promise<void> {
 		// Build an async queue that feeds user messages into the SDK stream.
@@ -250,7 +248,7 @@ export class SessionManager {
 			prompt: userStream as unknown as AsyncIterable<import('@anthropic-ai/claude-agent-sdk').SDKUserMessage>,
 			options: {
 				pathToClaudeCodeExecutable: wrapperPath,
-				cwd: vaultPath,
+				cwd: process.env.WORKSPACE_CWD ?? '/',
 				env: {
 					...process.env,
 					CLAUDE_CODE_OAUTH_TOKEN: oauthToken
