@@ -1,12 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { setConfig, getConfig } from '$lib/server/db/index.js';
-import { encrypt } from '$lib/server/crypto.js';
+import { getConfig, setConfig } from '$lib/server/db/index.js';
 import { createSession } from '$lib/server/auth/session.js';
+import { storeTokens } from '$lib/server/claude/oauth.js';
 
 /**
  * Save a Claude OAuth token obtained via `claude setup-token`.
- * This is the Phase 1 setup path. The token is encrypted before storage.
+ * This is the setup path. The token is encrypted before storage via storeTokens.
  * Also marks setup as complete and issues a session cookie.
  */
 export const POST: RequestHandler = async ({ request, cookies }) => {
@@ -20,11 +20,13 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		throw error(400, 'Invalid token format. Expected sk-ant-… from claude setup-token.');
 	}
 
-	setConfig('claude_oauth_token', encrypt(token.trim()));
-	// Tokens from `claude setup-token` are long-lived; we don't know the exact expiry
-	// so we set a conservative 7-day window and refresh proactively.
-	const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-	setConfig('claude_token_expires_at', expiresAt);
+	// Tokens from `claude setup-token` are long-lived; use a conservative 7-day window.
+	const now = new Date();
+	storeTokens({
+		accessToken: token.trim(),
+		expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+		refreshedAt: now.toISOString()
+	});
 
 	setConfig('setup_complete', 'true');
 	createSession(cookies); // log in immediately after setup
