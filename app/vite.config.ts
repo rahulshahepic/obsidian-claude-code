@@ -11,7 +11,12 @@ export default defineConfig({
 		coverage: {
 			provider: 'v8',
 			include: ['src/lib/server/**/*.ts'],
-			exclude: ['src/lib/server/db/schema.ts'],
+			exclude: [
+				'src/lib/server/db/schema.ts',
+				// webauthn.ts requires a real browser + hardware authenticator.
+				// It is covered by Playwright e2e tests in Phase 4, not unit tests.
+				'src/lib/server/auth/webauthn.ts'
+			],
 			thresholds: {
 				statements: 80,
 				branches: 75,
