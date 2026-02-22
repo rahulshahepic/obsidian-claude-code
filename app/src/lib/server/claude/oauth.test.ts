@@ -282,19 +282,20 @@ describe('exchangeCode', () => {
 		expect(new Date(tokens.expiresAt).getTime()).toBeGreaterThan(Date.now() + 3000 * 1000);
 	});
 
-	it('sends grant_type=authorization_code with code and verifier', async () => {
+	it('sends grant_type=authorization_code with code, verifier, and state', async () => {
 		const mockFetch = vi.fn().mockResolvedValue({
 			ok: true,
 			json: async () => ({ access_token: 'tok', expires_in: 3600 })
 		});
 		vi.stubGlobal('fetch', mockFetch);
 
-		await exchangeCode('the-code', 'the-verifier');
+		await exchangeCode('the-code', 'the-verifier', 'the-state');
 		const [, init] = mockFetch.mock.calls[0];
 		const body = JSON.parse(init.body as string);
 		expect(body.grant_type).toBe('authorization_code');
 		expect(body.code).toBe('the-code');
 		expect(body.code_verifier).toBe('the-verifier');
+		expect(body.state).toBe('the-state');
 		expect(body.redirect_uri).toBe('https://console.anthropic.com/oauth/code/callback');
 	});
 
