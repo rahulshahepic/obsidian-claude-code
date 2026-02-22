@@ -11,6 +11,7 @@ import { db } from './db/index.js';
 import { sessions } from './db/schema.js';
 import { getConfig } from './db/index.js';
 import { sql, gte } from 'drizzle-orm';
+import { getErrors, getLastError, type ErrorEntry } from './error-log.js';
 
 const PROCESS_START = Date.now();
 
@@ -230,6 +231,8 @@ export interface HealthSnapshot {
 	claudeTokenExpiresInSeconds?: number;
 	vaultLastPush: string | null;
 	version: string;
+	/** Last error message only — safe for the public health endpoint. */
+	lastError: { ts: number; message: string } | null;
 }
 
 export async function getHealthSnapshot(): Promise<HealthSnapshot> {
@@ -238,6 +241,7 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
 	const vault = getVaultStats();
 	const setupComplete = getConfig('setup_complete') === 'true';
 	const degraded = !setupComplete || container.status !== 'running' || !token.valid;
+	const last = getLastError();
 
 	return {
 		status: degraded ? 'degraded' : 'ok',
@@ -247,7 +251,8 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
 		claudeTokenValid: token.valid,
 		claudeTokenExpiresInSeconds: token.expiresInSeconds,
 		vaultLastPush: vault.lastPushAt,
-		version: '0.1.0'
+		version: '0.1.0',
+		lastError: last ? { ts: last.ts, message: last.message } : null
 	};
 }
 
@@ -258,6 +263,8 @@ export interface MonitorSnapshot extends HealthSnapshot {
 	container: ContainerStatus;
 	usage: UsageStats;
 	vault: VaultStats;
+	/** Full error history with stack traces — only served to authenticated users. */
+	errors: ErrorEntry[];
 }
 
 export async function getMonitorSnapshot(): Promise<MonitorSnapshot> {
@@ -269,6 +276,7 @@ export async function getMonitorSnapshot(): Promise<MonitorSnapshot> {
 		disk: getDiskStats(),
 		container: getContainerStatus(),
 		usage: getUsageStats(),
-		vault: getVaultStats()
+		vault: getVaultStats(),
+		errors: getErrors()
 	};
 }

@@ -34,6 +34,18 @@
 	function statusColor(s: string) {
 		return s === 'running' || s === 'ok' ? 'text-emerald-400' : 'text-rose-400';
 	}
+
+	function fmtTs(ms: number) {
+		return new Date(ms).toLocaleString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit'
+		});
+	}
+
+	let expandedIdx = $state<number | null>(null);
 </script>
 
 <svelte:head>
@@ -160,5 +172,46 @@
 		<p class="mt-1 text-xs text-slate-600">
 			All time: {snap.usage.totalSessions} sessions · ${snap.usage.totalCostUsd.toFixed(2)}
 		</p>
+	</section>
+
+	<!-- Recent errors -->
+	<section class="mb-4">
+		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+			Recent Errors
+			{#if snap.errors.length > 0}
+				<span class="ml-1 rounded-full bg-rose-900 px-1.5 py-0.5 text-rose-300">
+					{snap.errors.length}
+				</span>
+			{/if}
+		</h2>
+		{#if snap.errors.length === 0}
+			<div class="rounded-xl bg-slate-900 px-4 py-3">
+				<p class="text-sm text-slate-500">No errors since last restart</p>
+			</div>
+		{:else}
+			<div class="flex flex-col gap-2">
+				{#each snap.errors as err, i}
+					<div class="rounded-xl bg-slate-900 px-4 py-3">
+						<button
+							class="flex w-full items-start justify-between gap-2 text-left"
+							onclick={() => (expandedIdx = expandedIdx === i ? null : i)}
+						>
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-sm font-medium text-rose-300">{err.message}</p>
+								<p class="mt-0.5 text-xs text-slate-500">{fmtTs(err.ts)}</p>
+							</div>
+							{#if err.stack}
+								<span class="mt-0.5 shrink-0 text-xs text-slate-600">
+									{expandedIdx === i ? '▲' : '▼'}
+								</span>
+							{/if}
+						</button>
+						{#if expandedIdx === i && err.stack}
+							<pre class="mt-3 overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-slate-950 px-3 py-2 text-xs text-slate-400">{err.stack}</pre>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
 	</section>
 </div>
