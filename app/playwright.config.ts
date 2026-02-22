@@ -6,7 +6,7 @@ export default defineConfig({
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 1 : 0,
 	workers: 1,
-	reporter: 'list',
+	reporter: process.env.CI ? [['html', { open: 'never' }], ['list']] : 'list',
 	use: {
 		baseURL: 'http://localhost:3000',
 		trace: 'on-first-retry'
@@ -21,11 +21,17 @@ export default defineConfig({
 			use: { ...devices['Pixel 5'] }
 		}
 	],
-	// Start the dev server before running tests
 	webServer: {
-		command: 'node -e "process.exit(0)"', // placeholder; real tests use a running server
+		command: 'npm run build && node build',
 		url: 'http://localhost:3000',
-		reuseExistingServer: true,
-		timeout: 5000
+		reuseExistingServer: !process.env.CI,
+		timeout: 120_000,
+		env: {
+			APP_SECRET: 'playwright-test-secret-32-chars-ok',
+			ENCRYPTION_KEY: 'a'.repeat(64),
+			DATABASE_URL: '/tmp/playwright-test.db',
+			NODE_ENV: 'test',
+			PORT: '3000'
+		}
 	}
 });

@@ -14,7 +14,7 @@
 	const running = $derived(output === undefined);
 
 	// Render a short single-line preview of the input
-	const inputPreview = $derived(() => {
+	const inputPreview = $derived.by(() => {
 		// For Bash tool, show the command
 		if (input.command && typeof input.command === 'string') {
 			return input.command.split('\n')[0].slice(0, 60);
@@ -27,13 +27,13 @@
 		if (keys.length === 0) return '';
 		const first = input[keys[0]];
 		return typeof first === 'string' ? first.slice(0, 60) : '';
-	})();
+	});
 
 	// Format input as pretty JSON
 	const inputJson = $derived(JSON.stringify(input, null, 2));
 
 	// Map tool names to icons
-	const toolIcon = $derived(() => {
+	const toolIcon = $derived.by(() => {
 		const name = tool.toLowerCase();
 		if (name.includes('bash') || name.includes('shell')) return '>';
 		if (name.includes('read') || name.includes('view')) return 'R';
@@ -41,7 +41,7 @@
 		if (name.includes('search') || name.includes('grep') || name.includes('find')) return 'S';
 		if (name.includes('web') || name.includes('fetch')) return 'F';
 		return 'T';
-	})();
+	});
 </script>
 
 <div class="mx-4 my-1">

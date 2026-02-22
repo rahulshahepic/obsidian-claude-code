@@ -187,7 +187,7 @@
 	// Helpers
 	// ---------------------------------------------------------------------------
 
-	const stateLabel = $derived(() => {
+	const stateLabel = $derived.by(() => {
 		if (wsStatus === 'connecting') return 'Connecting…';
 		if (wsStatus === 'disconnected') return 'Reconnecting…';
 		if (sessionState === 'running') return 'Thinking…';
@@ -195,16 +195,16 @@
 		if (sessionState === 'error') return 'Error';
 		if (sessionState === 'done') return 'Done';
 		return 'Ready';
-	})();
+	});
 
-	const stateColor = $derived(() => {
+	const stateColor = $derived.by(() => {
 		if (wsStatus !== 'connected') return 'text-amber-400';
 		if (sessionState === 'running') return 'text-violet-400';
 		if (sessionState === 'waiting_permission') return 'text-amber-400';
 		if (sessionState === 'error') return 'text-rose-400';
 		if (sessionState === 'done') return 'text-emerald-400';
 		return 'text-slate-500';
-	})();
+	});
 
 	const isActive = $derived(sessionState === 'running' || sessionState === 'waiting_permission');
 </script>
