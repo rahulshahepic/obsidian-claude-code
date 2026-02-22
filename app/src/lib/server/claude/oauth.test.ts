@@ -104,7 +104,7 @@ describe('buildAuthorizationUrl', () => {
 	it('uses the Anthropic-controlled default redirect_uri', () => {
 		const url = new URL(buildAuthorizationUrl({ codeChallenge: 'c', state: 's' }));
 		expect(url.searchParams.get('redirect_uri')).toBe(
-			'https://platform.claude.com/oauth/code/callback'
+			'https://console.anthropic.com/oauth/code/callback'
 		);
 	});
 
@@ -250,9 +250,9 @@ describe('refreshAccessToken', () => {
 
 		await refreshAccessToken('my-token');
 		const [, init] = mockFetch.mock.calls[0];
-		const body = new URLSearchParams(init.body as string);
-		expect(body.get('grant_type')).toBe('refresh_token');
-		expect(body.get('refresh_token')).toBe('my-token');
+		const body = JSON.parse(init.body as string);
+		expect(body.grant_type).toBe('refresh_token');
+		expect(body.refresh_token).toBe('my-token');
 	});
 });
 
@@ -291,11 +291,11 @@ describe('exchangeCode', () => {
 
 		await exchangeCode('the-code', 'the-verifier');
 		const [, init] = mockFetch.mock.calls[0];
-		const body = new URLSearchParams(init.body as string);
-		expect(body.get('grant_type')).toBe('authorization_code');
-		expect(body.get('code')).toBe('the-code');
-		expect(body.get('code_verifier')).toBe('the-verifier');
-		expect(body.get('redirect_uri')).toBe('https://platform.claude.com/oauth/code/callback');
+		const body = JSON.parse(init.body as string);
+		expect(body.grant_type).toBe('authorization_code');
+		expect(body.code).toBe('the-code');
+		expect(body.code_verifier).toBe('the-verifier');
+		expect(body.redirect_uri).toBe('https://console.anthropic.com/oauth/code/callback');
 	});
 
 	it('defaults to 8-hour expiry when expires_in is omitted', async () => {
