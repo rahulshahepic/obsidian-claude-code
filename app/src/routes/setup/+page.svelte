@@ -103,6 +103,15 @@
 </svelte:head>
 
 <div class="min-h-screen bg-slate-950 px-6 py-12 flex flex-col">
+	<!-- Sign out -->
+	<div class="flex justify-end mb-2">
+		<form method="POST" action="/api/auth/signout">
+			<button type="submit" class="text-xs text-slate-500 hover:text-slate-300 transition">
+				Sign out
+			</button>
+		</form>
+	</div>
+
 	<!-- Progress dots -->
 	{#if step !== 'done'}
 		<div class="mb-10 flex justify-center gap-2">
@@ -278,9 +287,4 @@
 		{/if}
 	</div>
 
-	<form method="POST" action="/api/auth/signout" class="mt-8 text-center">
-		<button type="submit" class="text-xs text-slate-600 hover:text-slate-400 transition">
-			Sign out
-		</button>
-	</form>
 </div>
