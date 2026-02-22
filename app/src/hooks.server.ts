@@ -1,7 +1,18 @@
 import { redirect } from '@sveltejs/kit';
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, HandleServerError } from '@sveltejs/kit';
 import { getSession } from '$lib/server/auth/session.js';
 import { getConfig } from '$lib/server/db/index.js';
+
+/**
+ * Pass the real error message through to +error.svelte.
+ * This is a single-user self-hosted app — the owner seeing server errors
+ * on their phone is intentional and avoids needing SSH to diagnose issues.
+ */
+export const handleError: HandleServerError = ({ error }) => {
+	const message = error instanceof Error ? error.message : 'Internal Error';
+	console.error('[server error]', error);
+	return { message };
+};
 
 // No authentication required
 const PUBLIC_PATHS = ['/login', '/api/health', '/api/auth/google', '/api/auth/callback'];
