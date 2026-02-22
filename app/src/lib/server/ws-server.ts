@@ -72,6 +72,13 @@ export function attachWebSocketServer(httpServer: Server): WebSocketServer {
 	});
 
 	wss.on('connection', (ws) => {
+		// Send a protocol-level ping every 25 seconds to keep the connection alive
+		// through reverse proxies and NAT that close idle WebSocket connections.
+		const pingInterval = setInterval(() => {
+			if (ws.readyState === ws.OPEN) ws.ping();
+		}, 25_000);
+		ws.once('close', () => clearInterval(pingInterval));
+
 		handleWsConnection(
 			ws,
 			(event, handler) => ws.on(event as 'message', handler as (data: Buffer) => void),
