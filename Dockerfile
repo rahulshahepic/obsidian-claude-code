@@ -6,7 +6,15 @@ WORKDIR /app
 COPY app/package*.json ./
 RUN npm ci
 COPY app/ .
-RUN npm run build
+RUN npm run build && \
+    node_modules/.bin/esbuild src/server.ts \
+      --bundle \
+      --platform=node \
+      --target=node22 \
+      --format=esm \
+      --outfile=build/server.js \
+      --packages=external \
+      --external:../build/handler.js
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Stage 2: production dependencies only (no devDeps, keeps the image lean)
@@ -47,4 +55,4 @@ RUN chmod +x /usr/local/bin/docker-exec-wrapper.sh
 
 EXPOSE 3000
 ENV NODE_ENV=production
-CMD ["node", "build"]
+CMD ["node", "build/server.js"]
