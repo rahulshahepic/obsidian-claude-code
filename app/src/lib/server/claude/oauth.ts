@@ -56,18 +56,21 @@ export function buildAuthorizationUrl(params: {
 	state: string;
 	clientId?: string;
 	redirectUri?: string;
+	scope?: string;
 }): string {
 	const {
 		codeChallenge,
 		state,
 		clientId = '9d1c250a-d963-4f45-acb0-9e66a5a1be0e',
-		redirectUri = 'https://console.anthropic.com/oauth/code/callback'
+		redirectUri = 'https://console.anthropic.com/oauth/code/callback',
+		scope = 'user:profile user:inference user:sessions:claude_code user:mcp_servers'
 	} = params;
 
 	const url = new URL('https://claude.ai/oauth/authorize');
 	url.searchParams.set('client_id', clientId);
 	url.searchParams.set('response_type', 'code');
 	url.searchParams.set('redirect_uri', redirectUri);
+	url.searchParams.set('scope', scope);
 	url.searchParams.set('code_challenge', codeChallenge);
 	url.searchParams.set('code_challenge_method', 'S256');
 	url.searchParams.set('state', state);

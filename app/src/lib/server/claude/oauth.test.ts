@@ -120,6 +120,21 @@ describe('buildAuthorizationUrl', () => {
 		expect(url.searchParams.get('client_id')).toBe('custom-id');
 		expect(url.searchParams.get('redirect_uri')).toBe('https://example.com/cb');
 	});
+
+	it('includes the default Claude Code scope', () => {
+		const url = new URL(buildAuthorizationUrl({ codeChallenge: 'c', state: 's' }));
+		const scope = url.searchParams.get('scope') ?? '';
+		expect(scope).toContain('user:profile');
+		expect(scope).toContain('user:inference');
+		expect(scope).toContain('user:sessions:claude_code');
+	});
+
+	it('accepts a custom scope override', () => {
+		const url = new URL(
+			buildAuthorizationUrl({ codeChallenge: 'c', state: 's', scope: 'openid email' })
+		);
+		expect(url.searchParams.get('scope')).toBe('openid email');
+	});
 });
 
 // ---------------------------------------------------------------------------
