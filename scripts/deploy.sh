@@ -8,24 +8,25 @@ cd "$(dirname "$0")/.."
 
 [ -f .env ] || { echo "ERROR: .env not found — run scripts/setup.sh first"; exit 1; }
 
-# Inject secrets forwarded from GitHub Actions (if present in the environment).
-# Each variable is written into .env, updating an existing line or appending.
+# Inject a secret into .env, safe against special characters in the value.
+# Removes any existing line for the key and appends the new one.
 inject_secret() {
   local key="$1" value="$2"
   [ -z "$value" ] && return
-  if grep -q "^${key}=" .env; then
-    sed -i "s|^${key}=.*|${key}=${value}|" .env
-  else
-    echo "${key}=${value}" >> .env
-  fi
+  # Remove existing line (if any), then append — avoids sed special-char issues.
+  grep -v "^${key}=" .env > .env.tmp || true
+  mv .env.tmp .env
+  printf '%s=%s\n' "$key" "$value" >> .env
 }
-
-inject_secret GOOGLE_CLIENT_ID     "${GOOGLE_CLIENT_ID:-}"
-inject_secret GOOGLE_CLIENT_SECRET "${GOOGLE_CLIENT_SECRET:-}"
-inject_secret ALLOWED_EMAIL        "${ALLOWED_EMAIL:-}"
 
 echo "=== Pulling latest code ==="
 git pull
+
+# Inject GitHub-managed secrets AFTER git pull so this logic is always up to date
+# on subsequent runs (first run uses the function already defined above).
+inject_secret GOOGLE_CLIENT_ID     "${GOOGLE_CLIENT_ID:-}"
+inject_secret GOOGLE_CLIENT_SECRET "${GOOGLE_CLIENT_SECRET:-}"
+inject_secret ALLOWED_EMAIL        "${ALLOWED_EMAIL:-}"
 
 echo "=== Building and restarting containers ==="
 docker compose up -d --build
