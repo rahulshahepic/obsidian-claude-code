@@ -1,14 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { setConfig, getConfig } from '$lib/server/db/index.js';
+import { setConfig } from '$lib/server/db/index.js';
 import { mkdirSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
 
 export const POST: RequestHandler = async ({ request }) => {
-	if (getConfig('setup_complete') !== 'true') {
-		throw error(403, 'Complete passkey and Claude auth steps first.');
-	}
-
 	const { vaultPath } = await request.json();
 	if (!vaultPath || typeof vaultPath !== 'string') {
 		throw error(400, 'vaultPath is required.');
@@ -30,6 +26,9 @@ export const POST: RequestHandler = async ({ request }) => {
 	const publicUrl = process.env.PUBLIC_URL ?? 'http://localhost:5173';
 	const gitUrl = `${publicUrl}/vault.git`;
 	setConfig('vault_git_remote', gitUrl);
+
+	// Mark setup as complete now that all required steps are done
+	setConfig('setup_complete', 'true');
 
 	return json({ gitUrl });
 };
