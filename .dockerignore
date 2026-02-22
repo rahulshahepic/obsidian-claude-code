@@ -1,0 +1,26 @@
+# Git
+.git
+.gitignore
+
+# Node
+app/node_modules
+node_modules
+
+# SvelteKit build output (rebuilt in Docker)
+app/build
+app/.svelte-kit
+
+# Test artifacts
+app/coverage
+app/playwright-report
+app/test-results
+
+# Env files (injected at runtime, never baked into image)
+.env
+.env.*
+!.env.example
+
+# Docs
+*.md
+PLAN.md
+LICENSE
