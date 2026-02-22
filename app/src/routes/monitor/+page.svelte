@@ -137,21 +137,6 @@
 		</div>
 	</section>
 
-	<!-- Vault -->
-	<section class="mb-4">
-		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Vault</h2>
-		<div class="rounded-xl bg-slate-900 px-4 py-3 text-sm text-slate-300">
-			{#if snap.vault.lastPushAt}
-				<p>Last push: {new Date(snap.vault.lastPushAt).toLocaleString()}</p>
-			{:else}
-				<p class="text-slate-500">No commits yet</p>
-			{/if}
-			{#if snap.vault.path}
-				<p class="mt-1 font-mono text-xs text-slate-500 break-all">{snap.vault.path}</p>
-			{/if}
-		</div>
-	</section>
-
 	<!-- Usage -->
 	<section class="mb-4">
 		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">

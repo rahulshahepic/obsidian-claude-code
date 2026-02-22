@@ -12,7 +12,6 @@
  */
 import type { WsClient } from './session-manager.js';
 import { sessionManager, parseClientMsg } from './session-manager.js';
-import { getConfig } from './db/index.js';
 import { loadTokens } from './claude/oauth.js';
 import { ensureContainerRunning } from './docker.js';
 
@@ -74,10 +73,8 @@ async function _startSessionAndSend(firstMessage: string): Promise<void> {
 		throw new Error('No Claude token configured. Complete setup first.');
 	}
 
-	const vaultPath = getConfig('vault_path') ?? '/vault';
-
 	ensureContainerRunning();
 
-	await sessionManager.startSession(tokens.accessToken, vaultPath, WRAPPER_PATH);
+	await sessionManager.startSession(tokens.accessToken, WRAPPER_PATH);
 	sessionManager.sendMessage(firstMessage);
 }

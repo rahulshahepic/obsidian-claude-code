@@ -76,7 +76,7 @@ describe('SessionManager._runSdkLoop (SDK mocked)', () => {
 			])
 		);
 
-		await manager.startSession('token', '/vault', '/wrapper.sh');
+		await manager.startSession('token', '/wrapper.sh');
 
 		// Give the async loop time to process
 		await new Promise((r) => setTimeout(r, 50));
@@ -110,7 +110,7 @@ describe('SessionManager._runSdkLoop (SDK mocked)', () => {
 			])
 		);
 
-		await manager.startSession('token', '/vault', '/wrapper.sh');
+		await manager.startSession('token', '/wrapper.sh');
 		await new Promise((r) => setTimeout(r, 50));
 
 		const toolMsgs = client.received
@@ -129,7 +129,7 @@ describe('SessionManager._runSdkLoop (SDK mocked)', () => {
 			makeQueryGen([{ type: 'result', total_cost_usd: 0.042, num_turns: 2 }])
 		);
 
-		await manager.startSession('token', '/vault', '/wrapper.sh');
+		await manager.startSession('token', '/wrapper.sh');
 		await new Promise((r) => setTimeout(r, 50));
 
 		const costMsgs = client.received
@@ -146,7 +146,7 @@ describe('SessionManager._runSdkLoop (SDK mocked)', () => {
 			makeQueryGen([{ type: 'result', total_cost_usd: 0, num_turns: 1 }])
 		);
 
-		await manager.startSession('token', '/vault', '/wrapper.sh');
+		await manager.startSession('token', '/wrapper.sh');
 		await new Promise((r) => setTimeout(r, 50));
 
 		const stateMsgs = client.received
@@ -168,7 +168,7 @@ describe('SessionManager._runSdkLoop (SDK mocked)', () => {
 		}
 		mockQuery.mockReturnValueOnce(throwingGen());
 
-		await manager.startSession('token', '/vault', '/wrapper.sh');
+		await manager.startSession('token', '/wrapper.sh');
 		await new Promise((r) => setTimeout(r, 50));
 
 		const stateMsgs = client.received
@@ -183,22 +183,21 @@ describe('SessionManager._runSdkLoop (SDK mocked)', () => {
 			makeQueryGen([{ type: 'result', total_cost_usd: 0, num_turns: 1 }])
 		);
 
-		await manager.startSession('token', '/vault', '/wrapper.sh');
+		await manager.startSession('token', '/wrapper.sh');
 		// Session is running — sendMessage should work
 		expect(() => manager.sendMessage('follow-up')).not.toThrow();
 	});
 
-	it('calls query() with oauth token, vault path, and canUseTool callback', async () => {
+	it('calls query() with oauth token, wrapper path, and canUseTool callback', async () => {
 		mockQuery.mockReturnValueOnce(makeQueryGen([]));
 
-		await manager.startSession('my-token', '/my-vault', '/my-wrapper.sh');
+		await manager.startSession('my-token', '/my-wrapper.sh');
 		// Yield so _runSdkLoop starts and calls query()
 		await new Promise((r) => setTimeout(r, 50));
 
 		expect(mockQuery).toHaveBeenCalledOnce();
 		const opts = mockQuery.mock.calls[0][0].options;
 		expect(opts.env.CLAUDE_CODE_OAUTH_TOKEN).toBe('my-token');
-		expect(opts.cwd).toBe('/my-vault');
 		expect(opts.pathToClaudeCodeExecutable).toBe('/my-wrapper.sh');
 		expect(typeof opts.canUseTool).toBe('function');
 	});
@@ -211,11 +210,11 @@ describe('SessionManager._runSdkLoop (SDK mocked)', () => {
 		}
 		mockQuery.mockReturnValueOnce(hangingGen());
 
-		await manager.startSession('token', '/vault', '/wrapper.sh');
+		await manager.startSession('token', '/wrapper.sh');
 		// Yield so _runSdkLoop starts and state = 'running'
 		await new Promise((r) => setTimeout(r, 20));
 
-		await expect(manager.startSession('token', '/vault', '/wrapper.sh')).rejects.toThrow(
+		await expect(manager.startSession('token', '/wrapper.sh')).rejects.toThrow(
 			/running/
 		);
 
