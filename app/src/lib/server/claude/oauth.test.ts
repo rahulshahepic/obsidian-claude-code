@@ -104,7 +104,7 @@ describe('buildAuthorizationUrl', () => {
 	it('uses the Anthropic-controlled default redirect_uri', () => {
 		const url = new URL(buildAuthorizationUrl({ codeChallenge: 'c', state: 's' }));
 		expect(url.searchParams.get('redirect_uri')).toBe(
-			'https://platform.claude.com/oauth/code/callback'
+			'https://console.anthropic.com/oauth/code/callback'
 		);
 	});
 
@@ -295,7 +295,7 @@ describe('exchangeCode', () => {
 		expect(body.grant_type).toBe('authorization_code');
 		expect(body.code).toBe('the-code');
 		expect(body.code_verifier).toBe('the-verifier');
-		expect(body.redirect_uri).toBe('https://platform.claude.com/oauth/code/callback');
+		expect(body.redirect_uri).toBe('https://console.anthropic.com/oauth/code/callback');
 	});
 
 	it('defaults to 8-hour expiry when expires_in is omitted', async () => {

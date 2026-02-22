@@ -62,7 +62,7 @@ export function buildAuthorizationUrl(params: {
 		codeChallenge,
 		state,
 		clientId = '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
-		redirectUri = 'https://platform.claude.com/oauth/code/callback',
+		redirectUri = 'https://console.anthropic.com/oauth/code/callback',
 		scope = 'user:profile user:inference user:sessions:claude_code user:mcp_servers'
 	} = params;
 
@@ -120,7 +120,7 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
 			code,
 			code_verifier: codeVerifier,
 			client_id: CLIENT_ID,
-			redirect_uri: 'https://platform.claude.com/oauth/code/callback'
+			redirect_uri: 'https://console.anthropic.com/oauth/code/callback'
 		})
 	});
 
