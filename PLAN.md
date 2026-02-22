@@ -46,11 +46,15 @@ Obsidian Git plugin.
 | WS client | WebSocket connection with auto-reconnect; streams `text`/`tool_start`/`tool_end`/`permission_request`/`session_state`/`cost`/`error` | Phase 4 |
 | E2E tests | Playwright installed; `e2e/chat.test.ts` — server responds, login page has "Sign in with Google" link; full chat tests scaffolded (skipped; require live server) | Phase 4 → updated |
 | Deploy secrets | `scripts/deploy.sh` + CI inject `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAIL` from GitHub Secrets into server `.env` on every deploy | post-Phase 4 |
+| Git module | `git.ts` — `initVaultRepo` (git init + `receive.denyCurrentBranch=updateInstead`), `buildGitUrl`, `parseBasicAuth`, `parseGitBackendResponse`; all pure helpers exported for testing | Phase 5 |
+| Git HTTP backend | `routes/vault.git/[...path]/+server.ts` — delegates GET/POST to `git http-backend` CGI; Basic auth via `GIT_HTTP_PASSWORD`; no session cookie required | Phase 5 |
+| Vault setup | `/api/setup/vault` now calls `initVaultRepo` from `git.ts`; vault URL always `/vault.git`; `receive.denyCurrentBranch=updateInstead` applied idempotently | Phase 5 |
+| Unit tests | 163 tests across 11 suites; coverage 83.8% stmts / 80.0% branches / 81.5% fns (adds git.ts: buildGitUrl, parseBasicAuth, parseGitBackendResponse, isVaultRepo, initVaultRepo) | Phase 5 |
 
 ### Not yet built
-Phase 5 (Vault/Git), Phase 6 (OAuth polling), Phase 7 (prod hardening).
+Phase 6 (OAuth polling), Phase 7 (prod hardening).
 
-### Next up → Phase 5
+### Next up → Phase 6
 
 ---
 
@@ -275,7 +279,7 @@ obsidian-claude-code/
         │   │   └── session.ts     ✓  HMAC-signed cookie, createSession/getSession
         │   ├── claude/
         │   │   ├── oauth.ts       ✓  PKCE flow, token refresh, storeTokens/loadTokens
-        │   └── git.ts             ← Phase 5  bare repo management
+        │   └── git.ts             ✓  Phase 5  initVaultRepo, buildGitUrl, parseBasicAuth, parseGitBackendResponse
         │
         ├── lib/components/        ✓  Phase 4
         │   ├── chat/
@@ -308,7 +312,9 @@ obsidian-claude-code/
                 │   ├── claude/poll/  ← Phase 6  poll for auth code
                 │   └── vault/     ✓  init git repo, return push URL
                 ├── session/       ✓  GET (state) + DELETE (interrupt)
-                └── ws/            ✓  WebSocket upgrade (via ws-server.ts + vite plugin)
+                ├── ws/            ✓  WebSocket upgrade (via ws-server.ts + vite plugin)
+                └── vault.git/
+                    └── [...path]/ ✓  Phase 5  git smart HTTP backend (GET info/refs, POST pack)
 ```
 
 ---
@@ -722,12 +728,12 @@ pure parsers and are tested via integration tests or with mocked IO.
 7. ✓ WS client — auto-reconnect, streams all message types, optimistic user messages
 8. ✓ **E2E tests (Playwright)**: `@playwright/test` installed; `e2e/` with setup, login, chat tests
 
-### Phase 5 — Vault / Git
-1. Git bare repo at `/var/vault`
-2. Git HTTP backend via Caddy (or SSH — TBD based on Obsidian Git plugin support)
-3. Container vault mount at session start
-4. Settings page: show the push URL, copy button
-5. **Integration tests**: bare repo init, push URL generation, git HTTP auth
+### Phase 5 — Vault / Git  ✓ complete
+1. ✓ `git.ts` — `initVaultRepo` (git init + `receive.denyCurrentBranch=updateInstead`, idempotent), `buildGitUrl`, `parseBasicAuth`, `parseGitBackendResponse` (all pure helpers exported for unit tests)
+2. ✓ Git HTTP smart backend — `routes/vault.git/[...path]/+server.ts` delegates to `git http-backend` CGI; Basic auth via `GIT_HTTP_PASSWORD`; open in dev if unset
+3. ✓ Container vault mount — already handled at container start via `-v ${VAULTS_DIR}:/vault`; `receive.denyCurrentBranch=updateInstead` means Obsidian pushes update the working tree Claude reads
+4. ✓ Settings page push URL + copy button — present since Phase 2; `buildGitUrl` now the canonical source
+5. ✓ **Unit tests**: `buildGitUrl`, `parseBasicAuth`, `parseGitBackendResponse`, `isVaultRepo`, `initVaultRepo` — 24 new tests, all passing
 
 ### Phase 6 — OAuth Polling (Phase 2 upgrade)
 1. Reverse-engineer CLI polling mechanism (network inspection of `claude auth` run)
