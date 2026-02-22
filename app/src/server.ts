@@ -1,14 +1,17 @@
 /**
  * Custom production server entry point for adapter-node.
  *
- * Instead of running `node build/index.js`, run `node build/server.js`.
- * This file is compiled by the build step alongside the SvelteKit app.
+ * Registered via svelte.config.js: adapter({ entryPoint: 'src/server.ts' })
+ * The adapter compiles this file as part of the normal Vite build and replaces
+ * the 'HANDLER' import with the real SvelteKit request handler path.
  *
- * It creates a Node HTTP server, attaches the WebSocket handler,
+ * It creates a Node HTTP server, attaches the WebSocket upgrade handler,
  * then hands all other requests to the SvelteKit handler.
  */
 import { createServer } from 'http';
-import { handler } from '../build/handler.js';
+// 'HANDLER' is a virtual specifier resolved by @sveltejs/adapter-node at build
+// time. It points to the compiled SvelteKit request handler (no HTTP server).
+import { handler } from 'HANDLER';
 import { attachWebSocketServer } from './lib/server/ws-server.js';
 
 // Validate required env vars at startup so missing config fails fast with a
