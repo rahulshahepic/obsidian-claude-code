@@ -1,0 +1,57 @@
+services:
+
+  # ── Reverse proxy + automatic HTTPS ──────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    env_file: .env
+    depends_on:
+      - app
+
+  # ── SvelteKit web server ──────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - app_data:/data                          # SQLite database
+      - vault_data:/var/vault                   # Obsidian vault (shared with workspace)
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker-outside-of-Docker
+    env_file: .env
+    environment:
+      DATABASE_URL: /data/app.db
+      VAULTS_DIR: /var/vault
+      NODE_ENV: production
+      PORT: "3000"
+    depends_on:
+      - workspace
+
+  # ── Claude Code CLI workspace container ──────────────────────────────────────
+  workspace:
+    build:
+      context: container
+      dockerfile: Dockerfile
+    image: claude-workspace
+    container_name: claude-workspace   # must match CLAUDE_WORKSPACE_CONTAINER default
+    restart: unless-stopped
+    volumes:
+      - vault_data:/vault
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 200
+    command: tail -f /dev/null         # keep alive; claude is exec'd in on demand
+
+volumes:
+  caddy_data:    # Caddy TLS certificates (persists across redeploys)
+  caddy_config:
+  app_data:      # SQLite database (persists across redeploys)
+  vault_data:    # Obsidian vault data (persists across redeploys)
