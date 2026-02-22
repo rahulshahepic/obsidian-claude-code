@@ -33,8 +33,6 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/claude-agent-sdk": "^0.2.50",
-		"@simplewebauthn/browser": "^13.2.2",
-		"@simplewebauthn/server": "^13.2.3",
 		"@tailwindcss/vite": "^4.2.0",
 		"@types/ws": "^8.18.1",
 		"better-sqlite3": "^12.6.2",

@@ -32,10 +32,10 @@ test.describe('Chat page structure', () => {
 		expect(response?.status()).toBeLessThan(500);
 	});
 
-	test('login page has correct title and button', async ({ page }) => {
+	test('login page has correct title and sign-in link', async ({ page }) => {
 		await page.goto('/login');
 		await expect(page).toHaveTitle(/Sign In — Claude Code/);
-		await expect(page.getByRole('button', { name: /Use Passkey/i })).toBeVisible();
+		await expect(page.getByRole('link', { name: /Sign in with Google/i })).toBeVisible();
 	});
 });
 

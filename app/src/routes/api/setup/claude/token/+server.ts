@@ -1,20 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getConfig, setConfig } from '$lib/server/db/index.js';
-import { createSession } from '$lib/server/auth/session.js';
 import { storeTokens } from '$lib/server/claude/oauth.js';
 
 /**
  * Save a Claude OAuth token obtained via `claude setup-token`.
- * This is the setup path. The token is encrypted before storage via storeTokens.
- * Also marks setup as complete and issues a session cookie.
+ * This is the setup path; the token is encrypted before storage via storeTokens.
  */
-export const POST: RequestHandler = async ({ request, cookies }) => {
-	// Only callable during setup (before setup_complete = true)
-	if (getConfig('setup_complete') === 'true') {
-		throw error(403, 'Setup already complete. Use /settings to update credentials.');
-	}
-
+export const POST: RequestHandler = async ({ request }) => {
 	const { token } = await request.json();
 	if (!token || typeof token !== 'string' || !token.startsWith('sk-ant-')) {
 		throw error(400, 'Invalid token format. Expected sk-ant-… from claude setup-token.');
@@ -28,7 +20,5 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 		refreshedAt: now.toISOString()
 	});
 
-	setConfig('setup_complete', 'true');
-	createSession(cookies); // log in immediately after setup
 	return json({ ok: true });
 };

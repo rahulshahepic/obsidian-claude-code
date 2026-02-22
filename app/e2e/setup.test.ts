@@ -3,16 +3,12 @@
  *
  * These tests verify that the setup wizard renders the expected UI
  * and walks through each step correctly.
- *
- * Note: WebAuthn passkey interactions require a virtual authenticator.
- * These tests use Playwright's CDP-based virtual authenticator where supported,
- * and skip hardware-dependent steps in environments without it.
  */
 import { test, expect } from '@playwright/test';
 
 test.describe('Setup wizard', () => {
-	test('shows passkey registration step on first visit', async ({ page }) => {
-		// The app redirects to /setup when not configured
+	test('shows Claude token step on first visit', async ({ page }) => {
+		// The app redirects to /setup when authenticated but not yet configured
 		await page.goto('/setup');
 		await expect(page).toHaveTitle(/Claude Code/);
 

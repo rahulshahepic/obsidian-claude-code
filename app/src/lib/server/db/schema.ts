@@ -7,7 +7,6 @@ import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
  *
  * Known keys:
  *   setup_complete          "true" | undefined
- *   webauthn_credential     JSON (id, publicKey, counter, transports)
  *   claude_oauth_token      encrypted — CLAUDE_CODE_OAUTH_TOKEN
  *   claude_refresh_token    encrypted — used to get new access tokens
  *   claude_token_expires_at ISO timestamp string

@@ -1,45 +1,10 @@
 <script lang="ts">
-	import { startRegistration } from '@simplewebauthn/browser';
 	import { goto } from '$app/navigation';
 
-	let { data } = $props();
-
-	type Step = 'token' | 'passkey' | 'claude' | 'vault' | 'done';
-	let step = $state<Step>(data.requiresSetupToken ? 'token' : 'passkey');
+	type Step = 'claude' | 'vault' | 'done';
+	let step = $state<Step>('claude');
 	let busy = $state(false);
 	let error = $state('');
-
-	// Setup token step
-	let setupToken = $state('');
-
-	// Passkey step
-	async function registerPasskey() {
-		busy = true;
-		error = '';
-		try {
-			const headers: Record<string, string> = {};
-			if (setupToken) headers['x-setup-token'] = setupToken;
-
-			const optRes = await fetch('/api/auth/register', { headers });
-			if (!optRes.ok) throw new Error(await optRes.text());
-			const options = await optRes.json();
-
-			const credential = await startRegistration({ optionsJSON: options });
-
-			const verRes = await fetch('/api/auth/register', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', ...headers },
-				body: JSON.stringify(credential)
-			});
-			if (!verRes.ok) throw new Error(await verRes.text());
-
-			step = 'claude';
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Registration failed';
-		} finally {
-			busy = false;
-		}
-	}
 
 	// Claude auth step
 	let claudeToken = $state('');
@@ -84,7 +49,7 @@
 		}
 	}
 
-	const progressSteps: Step[] = ['passkey', 'claude', 'vault'];
+	const progressSteps: Step[] = ['claude', 'vault'];
 	function progressIndex(s: Step) {
 		return progressSteps.indexOf(s);
 	}
@@ -95,8 +60,8 @@
 </svelte:head>
 
 <div class="min-h-screen bg-slate-950 px-6 py-12 flex flex-col">
-	<!-- Progress dots (only shown once past the token gate) -->
-	{#if step !== 'token'}
+	<!-- Progress dots -->
+	{#if step !== 'done'}
 		<div class="mb-10 flex justify-center gap-2">
 			{#each progressSteps as s}
 				<div
@@ -112,54 +77,8 @@
 	{/if}
 
 	<div class="w-full max-w-sm mx-auto flex-1">
-		<!-- Step 0: Setup token gate -->
-		{#if step === 'token'}
-			<div class="mb-8 text-center">
-				<div class="mb-4 text-5xl">🔐</div>
-				<h1 class="text-2xl font-bold text-slate-100">Enter setup token</h1>
-				<p class="mt-2 text-sm text-slate-400">
-					Enter the setup token that was printed when you ran
-					<code class="text-violet-300">scripts/setup.sh</code> on your server.
-				</p>
-			</div>
-			<input
-				bind:value={setupToken}
-				type="text"
-				placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-				class="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-mono text-slate-200
-                       placeholder:text-slate-600 border border-slate-800 focus:border-violet-500
-                       focus:outline-none"
-			/>
-			<button
-				onclick={() => { if (setupToken.trim()) step = 'passkey'; }}
-				disabled={!setupToken.trim()}
-				class="mt-3 w-full rounded-2xl bg-violet-600 px-6 py-4 text-base font-semibold text-white
-                       transition active:scale-95 disabled:opacity-50"
-			>
-				Continue
-			</button>
-
-		<!-- Step 1: Passkey -->
-		{:else if step === 'passkey'}
-			<div class="mb-8 text-center">
-				<div class="mb-4 text-5xl">🔑</div>
-				<h1 class="text-2xl font-bold text-slate-100">Create your passkey</h1>
-				<p class="mt-2 text-sm text-slate-400">
-					Your passkey is stored on this device and uses biometrics (Face ID / fingerprint)
-					to authenticate. No password needed.
-				</p>
-			</div>
-			<button
-				onclick={registerPasskey}
-				disabled={busy}
-				class="w-full rounded-2xl bg-violet-600 px-6 py-4 text-base font-semibold text-white
-                       transition active:scale-95 disabled:opacity-50"
-			>
-				{busy ? 'Creating passkey…' : 'Create Passkey'}
-			</button>
-
-		<!-- Step 2: Claude token -->
-		{:else if step === 'claude'}
+		<!-- Step 1: Claude token -->
+		{#if step === 'claude'}
 			<div class="mb-8 text-center">
 				<div class="mb-4 text-5xl">🤖</div>
 				<h1 class="text-2xl font-bold text-slate-100">Link Claude account</h1>
@@ -189,7 +108,7 @@
 				{busy ? 'Saving…' : 'Continue'}
 			</button>
 
-		<!-- Step 3: Vault path -->
+		<!-- Step 2: Vault path -->
 		{:else if step === 'vault'}
 			<div class="mb-8 text-center">
 				<div class="mb-4 text-5xl">📁</div>

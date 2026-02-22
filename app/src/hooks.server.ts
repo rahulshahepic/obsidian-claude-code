@@ -3,33 +3,31 @@ import type { Handle } from '@sveltejs/kit';
 import { getSession } from '$lib/server/auth/session.js';
 import { getConfig } from '$lib/server/db/index.js';
 
-const PUBLIC_PATHS = [
-	'/setup',
-	'/login',
-	'/api/health',
-	'/api/auth/register',
-	'/api/auth/login'
-];
+// No authentication required
+const PUBLIC_PATHS = ['/login', '/api/health', '/api/auth/google', '/api/auth/callback'];
+
+// Authentication required, but setup_complete is not (these complete the setup)
+const SETUP_PATHS = ['/setup', '/api/setup'];
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;
 
-	// Allow public paths without any checks
+	// Allow unauthenticated access to public paths
 	if (PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'))) {
 		return resolve(event);
 	}
 
-	// Check if setup has been completed
-	const setupComplete = getConfig('setup_complete') === 'true';
-	if (!setupComplete) {
-		throw redirect(302, '/setup');
-	}
-
-	// Check authentication
+	// All other paths require a valid session
 	const isLoggedIn = getSession(event.cookies);
 	if (!isLoggedIn) {
 		const returnTo = encodeURIComponent(path + event.url.search);
 		throw redirect(302, `/login?return_to=${returnTo}`);
+	}
+
+	// Authenticated but setup not finished — send to /setup (unless already there)
+	const setupComplete = getConfig('setup_complete') === 'true';
+	if (!setupComplete && !SETUP_PATHS.some((p) => path === p || path.startsWith(p + '/'))) {
+		throw redirect(302, '/setup');
 	}
 
 	return resolve(event);

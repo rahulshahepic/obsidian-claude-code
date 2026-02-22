@@ -4,13 +4,20 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Login page', () => {
-	test('shows passkey authentication button', async ({ page }) => {
+	test('shows Google sign-in button', async ({ page }) => {
 		await page.goto('/login');
 		await expect(page).toHaveTitle(/Sign In/);
 
-		// Should show the "Use Passkey" button
-		const btn = page.getByRole('button', { name: /Use Passkey/i });
+		// Should show the "Sign in with Google" link
+		const btn = page.getByRole('link', { name: /Sign in with Google/i });
 		await expect(btn).toBeVisible();
+	});
+
+	test('Google sign-in button links to the OAuth endpoint', async ({ page }) => {
+		await page.goto('/login');
+
+		const btn = page.getByRole('link', { name: /Sign in with Google/i });
+		await expect(btn).toHaveAttribute('href', '/api/auth/google');
 	});
 
 	test('login page has no bottom nav', async ({ page }) => {
@@ -36,5 +43,11 @@ test.describe('Login page', () => {
 
 		// Page should have loaded successfully (no 5xx)
 		expect(response?.status()).toBeLessThan(500);
+	});
+
+	test('shows error message for unauthorized Google account', async ({ page }) => {
+		await page.goto('/login?error=unauthorized');
+
+		await expect(page.getByText(/not authorized/i)).toBeVisible();
 	});
 });
