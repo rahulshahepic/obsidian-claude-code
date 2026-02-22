@@ -111,13 +111,18 @@ const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
  * Used by the browser-based setup flow.
  * Throws on non-2xx responses.
  */
-export async function exchangeCode(code: string, codeVerifier: string): Promise<OAuthTokens> {
+export async function exchangeCode(
+	code: string,
+	codeVerifier: string,
+	state?: string | null
+): Promise<OAuthTokens> {
 	const res = await fetch(TOKEN_ENDPOINT, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			grant_type: 'authorization_code',
 			code,
+			state: state ?? null,
 			code_verifier: codeVerifier,
 			client_id: CLIENT_ID,
 			redirect_uri: 'https://console.anthropic.com/oauth/code/callback'

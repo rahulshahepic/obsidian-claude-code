@@ -25,9 +25,15 @@ export const POST: RequestHandler = async ({ request }) => {
 	const verifier = getConfig('oauth_pending_verifier');
 	if (!verifier) throw error(400, 'No pending OAuth session — call /api/setup/claude/start first');
 
+	// The callback page shows "<code>#<state>" as a single string to copy.
+	// Split on '#' to get the actual auth code and the embedded state.
+	const hashIdx = code.indexOf('#');
+	const authCode = hashIdx === -1 ? code : code.slice(0, hashIdx);
+	const embeddedState = hashIdx === -1 ? null : code.slice(hashIdx + 1);
+
 	let tokens;
 	try {
-		tokens = await exchangeCode(code, verifier);
+		tokens = await exchangeCode(authCode, verifier, embeddedState);
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		throw error(400, `Token exchange failed: ${msg}`);
