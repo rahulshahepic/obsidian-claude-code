@@ -12,7 +12,7 @@
  */
 import type { WsClient } from './session-manager.js';
 import { sessionManager, parseClientMsg } from './session-manager.js';
-import { loadTokens } from './claude/oauth.js';
+import { loadTokens, needsRefresh, refreshAccessToken, storeTokens } from './claude/oauth.js';
 import { ensureContainerRunning } from './docker.js';
 
 const WRAPPER_PATH =
@@ -68,9 +68,22 @@ export function handleWsConnection(
 }
 
 async function _startSessionAndSend(firstMessage: string): Promise<void> {
-	const tokens = loadTokens();
+	let tokens = loadTokens();
 	if (!tokens?.accessToken) {
 		throw new Error('No Claude token configured. Complete setup first.');
+	}
+
+	// Proactively refresh the access token if it is expiring within 30 minutes.
+	// This is safe to do silently — if the refresh fails we proceed with the
+	// existing token and let the SDK surface any auth error naturally.
+	if (needsRefresh(tokens.expiresAt) && tokens.refreshToken) {
+		try {
+			tokens = await refreshAccessToken(tokens.refreshToken);
+			storeTokens(tokens);
+		} catch {
+			// Refresh failed — proceed with the stored token. If the token is
+			// genuinely expired the SDK will return an auth error.
+		}
 	}
 
 	ensureContainerRunning();
