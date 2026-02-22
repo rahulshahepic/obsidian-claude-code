@@ -555,16 +555,79 @@ Mobile dashboard showing:
 
 ---
 
+## Testing Strategy
+
+### Philosophy: tests ship with the code, not after it
+Every phase includes tests for the server logic added in that phase.
+Tests are not a separate phase — they are part of "done."
+
+### Tooling
+
+| Tool | Purpose |
+|---|---|
+| `vitest` | Unit and integration tests (Node environment) |
+| `@vitest/coverage-v8` | Coverage reports via V8 instrumentation |
+| `@playwright/test` | E2E browser tests (Phase 4+, when UI is stable) |
+
+### What gets tested at each layer
+
+**Unit tests (Vitest, `src/**/*.test.ts`)**
+Pure logic with no external dependencies. Fast, no setup needed.
+
+| Module | What to test |
+|---|---|
+| `crypto.ts` | encrypt/decrypt round-trips, tampered ciphertext, bad key |
+| `auth/session.ts` | sign/verify, tampered cookie, missing cookie |
+| `monitor.ts` (pure parsers) | `/proc/meminfo` parsing, `/proc/stat` parsing, df output, token expiry logic |
+| `db/index.ts` | getConfig/setConfig/deleteConfig with temp SQLite |
+
+**Integration tests (Vitest + real dependencies)**
+Modules that talk to Docker, git, or the Claude SDK get integration tests
+that run against real local instances in CI (Docker-in-Docker). Skipped
+locally if Docker is not present.
+
+| Module | What to test |
+|---|---|
+| `docker.ts` | container start/stop/exec lifecycle |
+| `claude/oauth.ts` | PKCE generation, token exchange (HTTP mock) |
+| `session-manager.ts` | WebSocket bridge, canUseTool round-trip (SDK mocked) |
+
+**E2E tests (Playwright, `e2e/**/*.test.ts`)**
+Full browser flows. Added in Phase 4 once the UI is non-trivial.
+
+| Flow | What to test |
+|---|---|
+| Setup wizard | Register passkey → paste token → vault config → redirect to `/` |
+| Login | Passkey authenticate → session cookie → protected route access |
+| Chat | Send message → see streaming response → permission prompt → approve |
+
+### Coverage targets
+
+Unit test coverage is enforced in CI:
+- Statements: ≥ 80%
+- Branches: ≥ 75%
+- Functions: ≥ 80%
+
+Integration and E2E tests are not included in the coverage threshold —
+they run as a separate CI job.
+
+### Design rule for testability
+Pure parsing logic is always exported from modules so it can be tested
+without mocking IO. Functions that read files or exec commands call the
+pure parsers and are tested via integration tests or with mocked IO.
+
+---
+
 ## Implementation Phases
 
-### Phase 1 — Foundation
+### Phase 1 — Foundation ✓
 1. SvelteKit app scaffold: Tailwind, PWA manifest, iOS meta tags
 2. Drizzle schema (config + sessions tables) + SQLite setup
 3. Passkey auth: `@simplewebauthn/server`, session cookie, route guard
-4. Setup wizard: passkey registration step (Claude auth stubbed)
-5. `/api/health` endpoint
-6. `/` renders a placeholder chat UI (not yet functional)
-7. `docker-compose.yml` dev setup
+4. Setup wizard: passkey + Claude token + vault steps
+5. `/api/health` and `/api/monitor` endpoints, `/monitor` page
+6. `/` placeholder chat UI
+7. **Unit tests**: `crypto.ts`, `session.ts`, `monitor.ts` parsers, `db/index.ts`
 
 ### Phase 2 — Claude Auth
 1. `claude/oauth.ts`: PKCE generation, OAuth URL construction
@@ -572,6 +635,8 @@ Mobile dashboard showing:
 3. Token storage (encrypted in config table)
 4. Token refresh logic (access token expires in 8h, refresh token long-lived)
 5. Settings page: show auth status, "re-authenticate" button
+6. **Unit tests**: PKCE helpers (pure), token expiry/refresh logic
+7. **Integration tests**: token exchange with mocked HTTP (`vi.mock` fetch)
 
 ### Phase 3 — Container + Session Manager
 1. Workspace container Dockerfile
@@ -579,6 +644,8 @@ Mobile dashboard showing:
 3. `docker.ts`: start/stop/exec container lifecycle
 4. `session-manager.ts`: `query()` integration, `canUseTool` WebSocket bridge
 5. WebSocket server (`/api/ws`): auth check, message routing
+6. **Unit tests**: WebSocket message routing, permission round-trip state machine
+7. **Integration tests**: Docker lifecycle (skipped if Docker unavailable)
 
 ### Phase 4 — Chat UI
 1. Message list with streaming text
@@ -587,29 +654,28 @@ Mobile dashboard showing:
 4. Diff viewer (mobile unified diff)
 5. `/command` slash input
 6. Session state indicator + cost display
+7. **E2E tests (Playwright)**: setup wizard flow, login flow, basic chat send/receive
 
 ### Phase 5 — Vault / Git
 1. Git bare repo at `/var/vault`
 2. Git HTTP backend via Caddy (or SSH — TBD based on Obsidian Git plugin support)
 3. Container vault mount at session start
 4. Settings page: show the push URL, copy button
+5. **Integration tests**: bare repo init, push URL generation, git HTTP auth
 
 ### Phase 6 — OAuth Polling (Phase 2 upgrade)
 1. Reverse-engineer CLI polling mechanism (network inspection of `claude auth` run)
 2. Implement `setup/claude/start` + `setup/claude/poll` server routes
 3. Add fully browser-based auth path to setup wizard (no terminal step)
+4. **Unit tests**: polling state machine, PKCE challenge/verifier generation
 
-### Phase 7 — Monitor Page
-1. `monitor.ts`: host CPU/RAM from `/proc`, disk usage, Docker socket stats
-2. `/monitor` PWA page: system panel, usage panel, vault status, token status
-3. Auto-refresh every 30s
-
-### Phase 8 — Production Hardening
+### Phase 7 — Production Hardening
 1. `docker-compose.yml` prod target
 2. Caddy config with HTTPS
 3. Container resource limits (memory, CPU, PIDs)
 4. Network isolation (`claude-net` bridge, no host access)
 5. Log rotation, startup script / systemd unit
+6. **CI pipeline**: vitest unit tests + coverage gate on every PR
 
 ---
 

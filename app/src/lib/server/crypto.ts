@@ -26,8 +26,10 @@ export function encrypt(plaintext: string): string {
 }
 
 export function decrypt(encoded: string): string {
-	const [ivHex, tagHex, ciphertextHex] = encoded.split(':');
-	if (!ivHex || !tagHex || !ciphertextHex) throw new Error('Invalid encrypted value format.');
+	const parts = encoded.split(':');
+	const [ivHex, tagHex, ciphertextHex] = parts;
+	// ciphertextHex may be '' for empty-string plaintexts — only reject if segment is missing entirely
+	if (parts.length !== 3 || !ivHex || !tagHex) throw new Error('Invalid encrypted value format.');
 	const iv = Buffer.from(ivHex, 'hex');
 	const tag = Buffer.from(tagHex, 'hex');
 	const ciphertext = Buffer.from(ciphertextHex, 'hex');
