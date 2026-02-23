@@ -45,6 +45,8 @@ A self-hosted web app (PWA) that lets you run [Claude Code](https://github.com/a
 
 ### Key design decisions
 
+**Mobile-first, no desktop assumed.** This project is developed, supported, and used entirely from a mobile browser. There is no desktop app, no SSH access assumed, and no terminal fallback. Every feature — including debugging and observability — must work from the phone. If you can't do it from the browser UI, it doesn't exist.
+
 **Single-user.** One instance per person. The entire auth stack is built around a single allowed email. No admin panel, no user table, no per-user isolation complexity.
 
 **Google OAuth for browser login.** Only the email in `ALLOWED_EMAIL` can sign in. After the OAuth callback verifies the email, a 30-day HMAC-signed session cookie is issued. No passwords, no passkeys.
@@ -54,6 +56,8 @@ A self-hosted web app (PWA) that lets you run [Claude Code](https://github.com/a
 **Docker isolation.** The Claude Code CLI runs inside a persistent workspace container. The host-side SDK bridges to it via `docker exec -i`. This keeps Bash tool execution sandboxed away from the host OS.
 
 **WebSocket chat.** One persistent WS connection per browser tab. The session manager broadcasts to all connected clients (useful if you have the chat open on phone and laptop simultaneously). Permission prompts pause the SDK and wait for an approve/deny from any connected client.
+
+**In-browser observability.** Since there is no SSH access, all server diagnostics are exposed in the UI. A debug panel in the chat header shows interleaved client and server logs in real time — WebSocket lifecycle events, auth validation, token status, session state transitions. Server logs are kept in a 200-entry ring buffer and served via `/api/debug`.
 
 ---
 
@@ -150,6 +154,20 @@ Hit the **Stop** button (visible while a session is running) to interrupt Claude
 ### Sending follow-up messages
 
 After Claude responds, just type your next message. If the session is still running (Claude is working), your message is queued and delivered as the next turn. If the session has finished, a new session starts automatically.
+
+### Debug panel
+
+Tap **debug** in the top-right corner of the chat header to toggle the debug panel. It shows a live log of everything happening under the hood:
+
+- **WebSocket lifecycle** — connection attempts, open/close events with close codes, reconnect backoff timing
+- **Auth validation** — whether cookies are present on WebSocket upgrade, HMAC validation results, 401 rejections
+- **OAuth tokens** — load/decrypt results, expiry status, refresh attempts and outcomes
+- **Session state** — state transitions (idle → running → done), broadcast delivery, SDK errors
+- **Route guards** — SvelteKit hook redirects (login, setup)
+
+Log entries are color-coded: **yellow** for client-side events, **cyan** for server-side events. The panel polls server logs every 2 seconds when open. Use the **Clear** button to reset and **Refresh** to pull the latest.
+
+This is the primary tool for diagnosing connection issues, auth failures, and token problems — no SSH required.
 
 ### Managing your Claude token
 
@@ -273,6 +291,7 @@ claude-code-web/
     │   ├── service-worker.ts      PWA offline cache
     │   ├── lib/server/
     │   │   ├── crypto.ts          AES-256-GCM encrypt/decrypt
+    │   │   ├── debug-logger.ts    in-app observability (ring buffer + stdout)
     │   │   ├── monitor.ts         health + usage snapshots
     │   │   ├── docker.ts          container lifecycle
     │   │   ├── session-manager.ts SDK loop, canUseTool bridge, WS broadcast
@@ -283,6 +302,7 @@ claude-code-web/
     │   │   └── claude/            PKCE, token refresh, encrypted storage
     │   ├── lib/ws-protocol.ts     WsServerMsg / WsClientMsg types
     │   └── routes/                SvelteKit pages + API handlers
+    │       └── api/debug/         GET/DELETE server log ring buffer
     └── e2e/                       Playwright tests
 ```
 

@@ -1,11 +1,19 @@
 /**
- * Structured debug logger for diagnosing WebSocket / auth connection issues.
+ * In-app observability logger.
  *
- * All entries go to stdout with a [DEBUG] prefix and ISO timestamp so they
- * are visible in Docker logs, journalctl, or whatever log aggregator is
- * attached.  The last N entries are also kept in a ring buffer that is
- * exposed via the /api/debug endpoint so you can inspect them from the
- * browser without SSH access.
+ * This is a permanent part of the app's infrastructure — not temporary
+ * diagnostic code. Because this project is mobile-only (no desktop, no SSH),
+ * all observability must be accessible from the browser UI.
+ *
+ * Every call to debug() does two things:
+ *   1. Writes to stdout (visible in Docker logs / journalctl if you happen
+ *      to have server access).
+ *   2. Appends to an in-memory ring buffer (last 200 entries) that is
+ *      exposed via GET /api/debug and rendered in the client-side debug
+ *      panel (toggled from the header).
+ *
+ * Tags are short identifiers for the subsystem:
+ *   ws-server, ws-auth, ws-handler, session-mgr, oauth, hooks
  */
 
 const RING_SIZE = 200;
