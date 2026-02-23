@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import type { PageData } from './$types';
 	import type { MonitorSnapshot } from '$lib/server/monitor.js';
 
@@ -46,6 +47,66 @@
 	}
 
 	let expandedIdx = $state<number | null>(null);
+
+	// ---------------------------------------------------------------------------
+	// Debug logs (server-side)
+	// ---------------------------------------------------------------------------
+
+	interface DebugEntry {
+		ts: string;
+		tag: string;
+		msg: string;
+		data?: Record<string, unknown>;
+	}
+
+	let showDebug = $state(false);
+	let debugEntries = $state<DebugEntry[]>([]);
+	let debugLogEl = $state<HTMLDivElement | null>(null);
+	let debugPollHandle: ReturnType<typeof setInterval> | null = null;
+
+	async function fetchDebugLogs() {
+		try {
+			const res = await fetch('/api/debug');
+			if (!res.ok) return;
+			const d = await res.json();
+			debugEntries = (d.entries ?? []) as DebugEntry[];
+			queueMicrotask(() => {
+				if (debugLogEl) debugLogEl.scrollTop = debugLogEl.scrollHeight;
+			});
+		} catch { /* ignore */ }
+	}
+
+	async function clearDebugLogs() {
+		try {
+			await fetch('/api/debug', { method: 'DELETE' });
+			debugEntries = [];
+		} catch { /* ignore */ }
+	}
+
+	$effect(() => {
+		if (!browser) return;
+		if (showDebug) {
+			fetchDebugLogs();
+			debugPollHandle = setInterval(fetchDebugLogs, 3000);
+		} else {
+			if (debugPollHandle) {
+				clearInterval(debugPollHandle);
+				debugPollHandle = null;
+			}
+		}
+		return () => {
+			if (debugPollHandle) {
+				clearInterval(debugPollHandle);
+				debugPollHandle = null;
+			}
+		};
+	});
+
+	function fmtDebugEntry(e: DebugEntry): string {
+		const time = e.ts.split('T')[1]?.slice(0, 12) ?? e.ts;
+		const dataStr = e.data ? ' ' + JSON.stringify(e.data) : '';
+		return `${time} [${e.tag}] ${e.msg}${dataStr}`;
+	}
 </script>
 
 <svelte:head>
@@ -72,7 +133,7 @@
 	</div>
 {/snippet}
 
-<div class="min-h-screen bg-slate-950 px-4 py-6" style="padding-bottom: env(safe-area-inset-bottom, 1.5rem)">
+<div class="min-h-screen bg-slate-950 px-4 py-6" style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4.5rem)">
 	<h1 class="mb-6 text-lg font-semibold text-slate-100">System Monitor</h1>
 
 	<!-- Status banner -->
@@ -129,6 +190,7 @@
 			{#if !snap.claudeTokenValid}
 				<a
 					href="/settings"
+					data-sveltekit-reload
 					class="mt-2 inline-block rounded-lg bg-violet-700 px-3 py-1.5 text-sm font-medium text-white"
 				>
 					Re-authenticate →
@@ -198,5 +260,53 @@
 				{/each}
 			</div>
 		{/if}
+	</section>
+
+	<!-- Debug logs -->
+	<section class="mb-4">
+		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+			Debug Logs
+		</h2>
+		<div class="rounded-xl bg-slate-900 px-4 py-3">
+			<div class="flex items-center justify-between">
+				<button
+					onclick={() => (showDebug = !showDebug)}
+					class="text-sm {showDebug ? 'text-amber-400' : 'text-slate-400'}"
+				>
+					{showDebug ? 'Hide logs' : 'Show server logs'}
+				</button>
+				{#if showDebug}
+					<div class="flex gap-2">
+						<button
+							onclick={fetchDebugLogs}
+							class="rounded bg-slate-700 px-2 py-0.5 text-xs text-slate-300 active:bg-slate-600"
+						>
+							Refresh
+						</button>
+						<button
+							onclick={clearDebugLogs}
+							class="rounded bg-slate-700 px-2 py-0.5 text-xs text-slate-300 active:bg-slate-600"
+						>
+							Clear
+						</button>
+					</div>
+				{/if}
+			</div>
+			{#if showDebug}
+				<div
+					bind:this={debugLogEl}
+					class="mt-3 max-h-64 overflow-y-auto rounded-lg bg-slate-950 px-3 py-2 font-mono text-[10px] leading-relaxed"
+				>
+					{#each debugEntries as entry (entry.ts + entry.msg)}
+						<div class="whitespace-pre-wrap break-all text-cyan-400 hover:bg-slate-800/50">
+							{fmtDebugEntry(entry)}
+						</div>
+					{/each}
+					{#if debugEntries.length === 0}
+						<div class="text-slate-500 py-2">No debug entries yet.</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
 	</section>
 </div>
