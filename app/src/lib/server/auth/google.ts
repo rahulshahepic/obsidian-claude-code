@@ -5,6 +5,7 @@
  * Any Google account matching that email is granted access.
  */
 import { randomBytes } from 'crypto';
+import { debug } from '$lib/server/debug-logger.js';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -33,12 +34,23 @@ function getRedirectUri(): string {
 export function generateAuthUrl(): string {
 	// Clean up expired states
 	const now = Date.now();
+	let expired = 0;
 	for (const [s, exp] of pendingStates) {
-		if (exp < now) pendingStates.delete(s);
+		if (exp < now) {
+			pendingStates.delete(s);
+			expired++;
+		}
 	}
 
 	const state = randomBytes(16).toString('base64url');
 	pendingStates.set(state, now + STATE_TTL_MS);
+
+	debug('oauth', 'generated auth URL', {
+		statePrefix: state.slice(0, 8) + '…',
+		pendingCount: pendingStates.size,
+		expiredCleaned: expired,
+		redirectUri: getRedirectUri()
+	});
 
 	const params = new URLSearchParams({
 		client_id: getClientId(),
@@ -55,8 +67,31 @@ export function generateAuthUrl(): string {
 
 export function validateState(state: string): boolean {
 	const exp = pendingStates.get(state);
-	if (!exp || exp < Date.now()) return false;
+	const now = Date.now();
+
+	if (!exp) {
+		debug('oauth', 'state not found in pendingStates', {
+			statePrefix: state.slice(0, 8) + '…',
+			pendingCount: pendingStates.size,
+			pendingPrefixes: [...pendingStates.keys()].map((k) => k.slice(0, 8) + '…')
+		});
+		return false;
+	}
+
+	if (exp < now) {
+		debug('oauth', 'state expired', {
+			statePrefix: state.slice(0, 8) + '…',
+			expiredAgoMs: now - exp
+		});
+		pendingStates.delete(state);
+		return false;
+	}
+
 	pendingStates.delete(state);
+	debug('oauth', 'state validated and consumed', {
+		statePrefix: state.slice(0, 8) + '…',
+		remainingMs: exp - now
+	});
 	return true;
 }
 
