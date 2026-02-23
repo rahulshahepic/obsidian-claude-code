@@ -6,16 +6,34 @@ import type { Plugin } from 'vite';
 /**
  * Vite dev-server plugin: attach the WebSocket handler to the Vite HTTP server.
  * In production, src/server.ts does the same via attachWebSocketServer().
+ *
+ * The import is started eagerly inside configureServer (before the HTTP server
+ * begins listening) so there is no window where upgrade requests can arrive
+ * without a handler.  If the import resolves before the server is listening we
+ * attach immediately; otherwise we wait for the 'listening' event.
  */
 function wsDevPlugin(): Plugin {
 	return {
 		name: 'ws-dev',
 		configureServer(server) {
-			server.httpServer?.once('listening', async () => {
-				// Dynamic import avoids bundling the ws module at Vite startup.
-				const { attachWebSocketServer } = await import('./src/lib/server/ws-server.js');
-				attachWebSocketServer(server.httpServer!);
-			});
+			// Begin import immediately — well before the server starts accepting
+			// connections — to close the race between the server becoming ready
+			// and the upgrade handler being wired up.
+			const attachPromise = import('./src/lib/server/ws-server.js').then(
+				(m) => m.attachWebSocketServer
+			);
+
+			const attach = () => {
+				attachPromise.then((attachWebSocketServer) => {
+					if (server.httpServer) attachWebSocketServer(server.httpServer);
+				});
+			};
+
+			if (server.httpServer?.listening) {
+				attach();
+			} else {
+				server.httpServer?.once('listening', attach);
+			}
 		}
 	};
 }

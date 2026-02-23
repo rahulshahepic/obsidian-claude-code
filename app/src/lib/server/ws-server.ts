@@ -5,7 +5,9 @@
  *   - src/server.ts  (production)
  *   - vite.config.ts configureServer plugin (development)
  *
- * Auth: validates the session cookie (or ?token= in dev) before upgrading.
+ * Auth: validates the session cookie OR a short-lived ?token= ticket issued by
+ * GET /api/ws-ticket.  The ticket path supports environments (iOS Safari,
+ * Android WebView, PWA) where cookies are not reliably sent with upgrades.
  * Unauthenticated upgrade attempts receive HTTP 401.
  */
 import { WebSocketServer } from 'ws';
@@ -14,6 +16,7 @@ import { parse as parseCookie } from 'cookie';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { handleWsConnection } from './ws-handler.js';
 import { debug } from './debug-logger.js';
+import { isValidWsTicket } from './ws-ticket.js';
 
 const WS_PATH = '/api/ws';
 const COOKIE_NAME = 'session';
@@ -128,9 +131,10 @@ export function attachWebSocketServer(httpServer: Server): WebSocketServer {
 			return;
 		}
 
-		const valid = isValidSession(token);
+		// Accept either a long-lived session cookie token or a short-lived WS ticket.
+		const valid = isValidSession(token) || isValidWsTicket(token);
 		if (!valid) {
-			debug('ws-server', 'upgrade rejected: invalid session token', {
+			debug('ws-server', 'upgrade rejected: invalid session token or ticket', {
 				remoteAddr,
 				tokenLength: token.length,
 				tokenPreview: token.slice(0, 8) + '...'
@@ -140,7 +144,7 @@ export function attachWebSocketServer(httpServer: Server): WebSocketServer {
 			return;
 		}
 
-		debug('ws-server', 'upgrade accepted: session valid, upgrading to WebSocket', { remoteAddr });
+		debug('ws-server', 'upgrade accepted: auth valid, upgrading to WebSocket', { remoteAddr });
 
 		wss.handleUpgrade(req, socket, head, (ws) => {
 			wss.emit('connection', ws, req);

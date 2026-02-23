@@ -98,18 +98,41 @@
 		if (!browser) return;
 
 		const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-		const url = `${proto}://${window.location.host}/api/ws`;
+		const wsBase = `${proto}://${window.location.host}/api/ws`;
 
 		let destroyed = false;
 		let reconnectHandle: ReturnType<typeof setTimeout> | null = null;
 		let reconnectDelay = 1000;
 		let attempts = 0;
 
-		function connect() {
+		/**
+		 * Fetch a short-lived auth ticket from the server.
+		 * Falls back to undefined if the request fails (e.g. offline),
+		 * in which case the cookie is the only auth mechanism.
+		 */
+		async function fetchTicket(): Promise<string | undefined> {
+			try {
+				const res = await fetch('/api/ws-ticket');
+				if (!res.ok) return undefined;
+				const data = await res.json() as { ticket?: string };
+				return data.ticket;
+			} catch {
+				return undefined;
+			}
+		}
+
+		async function connect() {
 			if (destroyed) return;
 			attempts++;
 			wsStatus = 'connecting';
 
+			// Obtain a ticket so WebSocket auth works even in environments
+			// (iOS Safari, Android WebView, PWA) where cookies are not reliably
+			// sent with upgrade requests.
+			const ticket = await fetchTicket();
+			if (destroyed) return;
+
+			const url = ticket ? `${wsBase}?token=${encodeURIComponent(ticket)}` : wsBase;
 			const ws = new WebSocket(url);
 			wsRef = ws;
 
