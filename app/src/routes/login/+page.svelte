@@ -6,8 +6,8 @@
 		token_exchange_failed: 'Authentication failed — please try again.',
 		access_denied: 'Access was denied. Please try again.',
 		state_invalid:
-			'Sign-in session expired or was already used. This can happen if the page was refreshed or the server restarted. Tap below to try again.',
-		state_missing: 'Missing authentication parameters. Tap below to sign in again.'
+			'Sign-in session expired or was already used. This can happen if the page was refreshed. Please sign in again.',
+		state_missing: 'Missing authentication parameters. Please sign in again.'
 	};
 
 	const errorParam = $derived($page.url.searchParams.get('error'));

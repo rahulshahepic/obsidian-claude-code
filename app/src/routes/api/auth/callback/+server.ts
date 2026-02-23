@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { validateState, exchangeCode, isAllowedEmail } from '$lib/server/auth/google.js';
+import { exchangeCode, isAllowedEmail } from '$lib/server/auth/google.js';
 import { createSession } from '$lib/server/auth/session.js';
 import { debug } from '$lib/server/debug-logger.js';
 
@@ -23,12 +23,23 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 		throw redirect(302, '/login?error=state_missing');
 	}
 
-	if (!validateState(state)) {
-		debug('oauth', 'state validation failed — invalid or expired', {
-			statePrefix: state.slice(0, 8) + '…'
+	// Compare the state from the URL with the state stored in the cookie.
+	// This is immune to server restarts (unlike the previous in-memory Map).
+	const cookieState = cookies.get('oauth_state');
+	cookies.delete('oauth_state', { path: '/' }); // one-time use
+
+	if (!cookieState || cookieState !== state) {
+		debug('oauth', 'state validation failed — cookie mismatch', {
+			statePrefix: state.slice(0, 8) + '…',
+			hasCookie: !!cookieState,
+			cookiePrefix: cookieState ? cookieState.slice(0, 8) + '…' : 'none'
 		});
 		throw redirect(302, '/login?error=state_invalid');
 	}
+
+	debug('oauth', 'state validated via cookie', {
+		statePrefix: state.slice(0, 8) + '…'
+	});
 
 	debug('oauth', 'state validated, exchanging code for token');
 
