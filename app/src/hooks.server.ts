@@ -18,7 +18,7 @@ export const handleError: HandleServerError = ({ error }) => {
 };
 
 // No authentication required
-const PUBLIC_PATHS = ['/login', '/api/health', '/api/auth/google', '/api/auth/callback'];
+const PUBLIC_PATHS = ['/login', '/api/health', '/api/auth/google', '/api/auth/callback', '/api/ws'];
 
 // Authentication required, but setup_complete is not (these complete the setup)
 const SETUP_PATHS = ['/setup', '/api/setup', '/api/auth/signout'];
