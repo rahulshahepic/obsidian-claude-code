@@ -8,6 +8,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { getConfig, setConfig } from '../db/index.js';
 import { encrypt, decrypt } from '../crypto.js';
+import { debug } from '../debug-logger.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,6 +117,12 @@ export async function exchangeCode(
 	codeVerifier: string,
 	state?: string | null
 ): Promise<OAuthTokens> {
+	debug('oauth', 'exchangeCode: starting token exchange', {
+		codeLength: code.length,
+		verifierLength: codeVerifier.length,
+		hasState: !!state
+	});
+
 	const res = await fetch(TOKEN_ENDPOINT, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -131,12 +138,25 @@ export async function exchangeCode(
 
 	if (!res.ok) {
 		const text = await res.text();
+		debug('oauth', 'exchangeCode: token exchange failed', {
+			status: res.status,
+			statusText: res.statusText,
+			responseBody: text.slice(0, 500)
+		});
 		throw new Error(`Token exchange failed: ${res.status} ${text}`);
 	}
 
 	const data = (await res.json()) as TokenResponse;
 	const expiresIn = data.expires_in ?? 8 * 3600;
 	const now = new Date();
+
+	debug('oauth', 'exchangeCode: token exchange succeeded', {
+		hasAccessToken: !!data.access_token,
+		hasRefreshToken: !!data.refresh_token,
+		expiresIn,
+		accessTokenLength: data.access_token?.length ?? 0
+	});
+
 	return {
 		accessToken: data.access_token,
 		refreshToken: data.refresh_token,
@@ -150,6 +170,10 @@ export async function exchangeCode(
  * Throws on non-2xx responses.
  */
 export async function refreshAccessToken(refreshToken: string): Promise<OAuthTokens> {
+	debug('oauth', 'refreshAccessToken: starting token refresh', {
+		refreshTokenLength: refreshToken.length
+	});
+
 	const res = await fetch(TOKEN_ENDPOINT, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -162,12 +186,24 @@ export async function refreshAccessToken(refreshToken: string): Promise<OAuthTok
 
 	if (!res.ok) {
 		const text = await res.text();
+		debug('oauth', 'refreshAccessToken: refresh failed', {
+			status: res.status,
+			statusText: res.statusText,
+			responseBody: text.slice(0, 500)
+		});
 		throw new Error(`Token refresh failed: ${res.status} ${text}`);
 	}
 
 	const data = (await res.json()) as TokenResponse;
 	const expiresIn = data.expires_in ?? 8 * 3600; // default 8 hours
 	const now = new Date();
+
+	debug('oauth', 'refreshAccessToken: refresh succeeded', {
+		hasNewAccessToken: !!data.access_token,
+		hasNewRefreshToken: !!data.refresh_token,
+		expiresIn
+	});
+
 	return {
 		accessToken: data.access_token,
 		refreshToken: data.refresh_token ?? refreshToken, // keep old if not rotated
@@ -185,16 +221,52 @@ export async function refreshAccessToken(refreshToken: string): Promise<OAuthTok
  * Returns null if no access token has been stored.
  */
 export function loadTokens(): OAuthTokens | null {
+	debug('oauth', 'loadTokens: reading from config table');
 	const raw = getConfig('claude_oauth_token');
-	if (!raw) return null;
+	if (!raw) {
+		debug('oauth', 'loadTokens: no claude_oauth_token in config table');
+		return null;
+	}
 	const expiresAt = getConfig('claude_token_expires_at') ?? new Date(0).toISOString();
 	const refreshedAt = getConfig('claude_token_refreshed_at') ?? expiresAt;
 	const rawRefresh = getConfig('claude_refresh_token');
-	return {
-		accessToken: decrypt(raw),
+
+	let accessToken: string;
+	try {
+		accessToken = decrypt(raw);
+	} catch (err) {
+		debug('oauth', 'loadTokens: failed to decrypt access token', {
+			error: err instanceof Error ? err.message : String(err),
+			rawLength: raw.length
+		});
+		return null;
+	}
+
+	let refreshToken: string | undefined;
+	if (rawRefresh) {
+		try {
+			refreshToken = decrypt(rawRefresh);
+		} catch (err) {
+			debug('oauth', 'loadTokens: failed to decrypt refresh token', {
+				error: err instanceof Error ? err.message : String(err)
+			});
+		}
+	}
+
+	debug('oauth', 'loadTokens: tokens loaded successfully', {
+		accessTokenLength: accessToken.length,
+		hasRefreshToken: !!refreshToken,
 		expiresAt,
 		refreshedAt,
-		refreshToken: rawRefresh ? decrypt(rawRefresh) : undefined
+		isExpired: new Date(expiresAt).getTime() < Date.now(),
+		msUntilExpiry: new Date(expiresAt).getTime() - Date.now()
+	});
+
+	return {
+		accessToken,
+		expiresAt,
+		refreshedAt,
+		refreshToken
 	};
 }
 
@@ -202,10 +274,17 @@ export function loadTokens(): OAuthTokens | null {
  * Persist OAuth tokens to the config table (access token and refresh token encrypted).
  */
 export function storeTokens(tokens: OAuthTokens): void {
+	debug('oauth', 'storeTokens: persisting tokens', {
+		accessTokenLength: tokens.accessToken.length,
+		hasRefreshToken: !!tokens.refreshToken,
+		expiresAt: tokens.expiresAt,
+		refreshedAt: tokens.refreshedAt
+	});
 	setConfig('claude_oauth_token', encrypt(tokens.accessToken));
 	setConfig('claude_token_expires_at', tokens.expiresAt);
 	setConfig('claude_token_refreshed_at', tokens.refreshedAt);
 	if (tokens.refreshToken) {
 		setConfig('claude_refresh_token', encrypt(tokens.refreshToken));
 	}
+	debug('oauth', 'storeTokens: done');
 }

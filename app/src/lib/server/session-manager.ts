@@ -21,6 +21,7 @@ import type {
 	WsClientMsg,
 	WsPermissionResponseMsg
 } from '../ws-protocol.js';
+import { debug } from './debug-logger.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,6 +84,10 @@ export class SessionManager {
 
 	addClient(client: WsClient): void {
 		this.clients.add(client);
+		debug('session-mgr', 'client added', {
+			totalClients: this.clients.size,
+			currentState: this.state
+		});
 		// Immediately sync state to the new connection
 		client.send(encodeMsg({ type: 'session_state', state: this.state }));
 		if (this.totalCostUsd > 0) {
@@ -92,6 +97,9 @@ export class SessionManager {
 
 	removeClient(client: WsClient): void {
 		this.clients.delete(client);
+		debug('session-mgr', 'client removed', {
+			totalClients: this.clients.size
+		});
 	}
 
 	getState(): SessionState {
@@ -102,13 +110,27 @@ export class SessionManager {
 
 	broadcast(msg: WsServerMsg): void {
 		const data = encodeMsg(msg);
+		let sent = 0;
+		let skipped = 0;
 		for (const client of this.clients) {
 			try {
-				if (client.readyState === 1 /* OPEN */) client.send(data);
+				if (client.readyState === 1 /* OPEN */) {
+					client.send(data);
+					sent++;
+				} else {
+					skipped++;
+				}
 			} catch {
+				skipped++;
 				// Ignore disconnected clients; they'll be removed on close event.
 			}
 		}
+		debug('session-mgr', 'broadcast', {
+			msgType: msg.type,
+			sent,
+			skipped,
+			totalClients: this.clients.size
+		});
 	}
 
 	// ---- Permission handling ------------------------------------------------
@@ -166,7 +188,14 @@ export class SessionManager {
 		oauthToken: string,
 		wrapperPath: string
 	): Promise<string> {
+		debug('session-mgr', 'startSession called', {
+			currentState: this.state,
+			tokenLength: oauthToken.length,
+			wrapperPath
+		});
+
 		if (this.state !== 'idle' && this.state !== 'done' && this.state !== 'error') {
+			debug('session-mgr', 'startSession rejected: bad state', { state: this.state });
 			throw new Error(`Cannot start session: current state is "${this.state}".`);
 		}
 
@@ -182,9 +211,12 @@ export class SessionManager {
 
 		this.setState('running');
 
+		debug('session-mgr', 'session created, starting SDK loop', { sessionId });
+
 		// Start the SDK query in the background — it drives the async loop.
 		this._runSdkLoop(sessionId, oauthToken, wrapperPath).catch((err: unknown) => {
 			const msg = err instanceof Error ? err.message : String(err);
+			debug('session-mgr', 'SDK loop error', { sessionId, error: msg });
 			this.broadcast({ type: 'error', message: msg });
 			this._finaliseSession(sessionId, 'error');
 		});
@@ -312,7 +344,9 @@ export class SessionManager {
 	// ---- Private helpers ----------------------------------------------------
 
 	private setState(next: SessionState): void {
+		const prev = this.state;
 		this.state = next;
+		debug('session-mgr', 'state transition', { from: prev, to: next });
 		this.broadcast({ type: 'session_state', state: next });
 	}
 

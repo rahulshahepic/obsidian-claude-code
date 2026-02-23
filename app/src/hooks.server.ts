@@ -3,6 +3,7 @@ import type { Handle, HandleServerError } from '@sveltejs/kit';
 import { getSession } from '$lib/server/auth/session.js';
 import { getConfig } from '$lib/server/db/index.js';
 import { pushError } from '$lib/server/error-log.js';
+import { debug } from '$lib/server/debug-logger.js';
 
 /**
  * Pass the real error message through to +error.svelte and store it in
@@ -25,14 +26,25 @@ const SETUP_PATHS = ['/setup', '/api/setup', '/api/auth/signout'];
 export const handle: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;
 
+	// Skip noisy asset requests from debug logging
+	const isAsset = path.startsWith('/_app/') || path.startsWith('/favicon');
+
 	// Allow unauthenticated access to public paths
 	if (PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'))) {
+		if (!isAsset) debug('hooks', 'public path, no auth required', { path });
 		return resolve(event);
 	}
 
 	// All other paths require a valid session
 	const isLoggedIn = getSession(event.cookies);
 	if (!isLoggedIn) {
+		if (!isAsset) {
+			debug('hooks', 'not logged in, redirecting to /login', {
+				path,
+				hasCookies: event.cookies.getAll().length > 0,
+				cookieNames: event.cookies.getAll().map(c => c.name)
+			});
+		}
 		const returnTo = encodeURIComponent(path + event.url.search);
 		throw redirect(302, `/login?return_to=${returnTo}`);
 	}
@@ -40,7 +52,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Authenticated but setup not finished — send to /setup (unless already there)
 	const setupComplete = getConfig('setup_complete') === 'true';
 	if (!setupComplete && !SETUP_PATHS.some((p) => path === p || path.startsWith(p + '/'))) {
+		debug('hooks', 'setup not complete, redirecting to /setup', {
+			path,
+			setupComplete
+		});
 		throw redirect(302, '/setup');
+	}
+
+	if (!isAsset) {
+		debug('hooks', 'request authorized', { path, setupComplete });
 	}
 
 	return resolve(event);
