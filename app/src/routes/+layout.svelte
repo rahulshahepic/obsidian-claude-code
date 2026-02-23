@@ -30,6 +30,7 @@
 		{#each navItems as item}
 			<a
 				href={item.href}
+				data-sveltekit-reload
 				class="flex flex-1 flex-col items-center gap-0.5 py-3 text-xs transition
                        {$page.url.pathname === item.href
 					? 'text-violet-400'
