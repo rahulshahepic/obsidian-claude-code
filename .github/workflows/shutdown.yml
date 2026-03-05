@@ -25,7 +25,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd ~/claude-code-web
+            cd ~/obsidian-claude-code
             if [ "${{ inputs.remove_volumes }}" = "true" ]; then
               docker compose down -v
             else
