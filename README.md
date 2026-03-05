@@ -225,7 +225,9 @@ Coverage thresholds (enforced in CI): statements ≥ 80%, branches ≥ 75%, func
 
 ## CI/CD (GitHub Actions)
 
-Pushing to `main` triggers a deploy. Set these secrets in **Settings → Secrets and variables → Actions**:
+CI runs on every PR and push to `main` (unit tests + Playwright). There is no automatic deploy — all deployments are manual.
+
+The following secrets are required for the SSH-based workflows (manual deploy and shutdown):
 
 | Secret | Description |
 |---|---|
@@ -235,10 +237,6 @@ Pushing to `main` triggers a deploy. Set these secrets in **Settings → Secrets
 | `GOOGLE_CLIENT_ID` | From Google Cloud Console |
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console |
 | `ALLOWED_EMAIL` | Your Google account email |
-
-`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `ALLOWED_EMAIL` are injected into the server's `.env` on every deploy and override whatever `setup.sh` wrote.
-
-If `VPS_HOST` is not set the deploy step is skipped (useful for forks or dev environments).
 
 ### Manual deploy
 
@@ -250,7 +248,7 @@ bash scripts/deploy.sh
 
 ### Shutting down
 
-To stop and remove all running containers on the VPS:
+To stop all running containers on the VPS, run the **Shutdown VPS** workflow from GitHub Actions → Actions tab, or via SSH:
 
 ```bash
 ssh user@your-vps
@@ -265,6 +263,28 @@ To also remove the workspace volume (irreversible — deletes all files inside t
 ```bash
 docker compose down -v
 ```
+
+### Restarting after shutdown
+
+If you shut down with `docker compose down` (volumes preserved), restart with:
+
+```bash
+ssh user@your-vps
+cd ~/claude-code-web
+docker compose up -d
+```
+
+No rebuild or browser setup is needed — your existing `.env`, database, and Claude token are intact.
+
+If you ran `docker compose down -v` (volumes removed), you need a full redeploy:
+
+```bash
+ssh user@your-vps
+cd ~/claude-code-web
+docker compose up -d --build
+```
+
+Then re-authenticate with Claude via the browser setup wizard at `https://YOUR_DOMAIN`.
 
 ---
 
