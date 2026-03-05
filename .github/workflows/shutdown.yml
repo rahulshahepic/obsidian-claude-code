@@ -1,0 +1,33 @@
+name: Shutdown VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      remove_volumes:
+        description: 'Also remove Docker volumes (deletes workspace files — irreversible)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  shutdown:
+    name: Stop containers on VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Shutdown via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ~/claude-code-web
+            if [ "${{ inputs.remove_volumes }}" = "true" ]; then
+              docker compose down -v
+            else
+              docker compose down
+            fi
