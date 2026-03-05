@@ -248,6 +248,24 @@ cd ~/claude-code-web
 bash scripts/deploy.sh
 ```
 
+### Shutting down
+
+To stop and remove all running containers on the VPS:
+
+```bash
+ssh user@your-vps
+cd ~/claude-code-web
+docker compose down
+```
+
+This stops the Caddy proxy, the SvelteKit app, and the workspace container. Your data in `./data/app.db` and any files in the workspace volume are preserved.
+
+To also remove the workspace volume (irreversible — deletes all files inside the container):
+
+```bash
+docker compose down -v
+```
+
 ---
 
 ## Expected cost
